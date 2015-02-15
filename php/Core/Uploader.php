@@ -13,10 +13,11 @@ abstract class Uploader{
 			'multi'=>false,
 			'extensions'=>Images::$extensions,
 			'conversion'=>null,
+			'maxFileSize'=>self::file_upload_max_size()
 		],$conf);
 		extract($conf);
-		$func = 'file'.($multi?'s':'');
-		return self::$func($dir,$key,'image/',function($file)use($width,$height,$rename,$conversion){
+		$func = 'file'.($multi?'s':'');#self::uploadFile($_FILES[$k],$dir,$mime,$callback,false,true,$maxFileSize);
+		return self::$func($dir,$key,'image/',function($file)use($width,$height,$rename,$conversion,$maxFileSize){
 			$ext = strtolower(pathinfo($file,PATHINFO_EXTENSION));
 			if($conversion&&$ext!=$conversion&&($imgFormat=exif_imagetype($file))!=constant('IMAGETYPE_'.strtoupper($conversion))){
 				switch($imgFormat){
@@ -58,17 +59,21 @@ abstract class Uploader{
 		'jpeg'=>'jpg',
 	];
 	static function formatFilename($name){
-		$name = filter_var(str_replace([' ','_',',','?'],'-',$name),FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+		$name = filter_var(str_replace([' ','_',',','?'],'-',$name));#,FILTER_SANITIZE_FULL_SPECIAL_CHARS);
 		$e = strtolower(pathinfo($name,PATHINFO_EXTENSION));
 		if(isset(static::$extensionRewrite[$e]))
 			$name = substr($name,0,-1*strlen($e)).static::$extensionRewrite[$e];
 		return $name;
 	}
-	static function uploadFile(&$file,$dir='',$mime=null,$callback=null,$precallback=null,$nooverw=null,$maxFileSize=null){
+	static function uploadFile(&$file,$dir='',$mime=null,$callback=null,$precallback=null,$nooverw=null,$maxFileSize=null){#var_dump($maxFileSize);exit;
 		if($file['error']!==UPLOAD_ERR_OK)
 			throw new ExceptionUpload($file['error']);
 		if($mime&&stripos($file['type'],$mime)!==0)
 			throw new ExceptionUpload('type');
+		if(is_callable($maxFileSize))#			throw new ExceptionUpload('is callable');
+			$maxFileSize = self::file_upload_max_size();//$maxFileSize();#warning	Missing argument 1 for Surikat\Core\Uploader::Surikat\Core\{closure}()
+
+
 		if($maxFileSize&&filesize($file['tmp_name'])>$maxFileSize)
 			throw new ExceptionUpload(UPLOAD_ERR_FORM_SIZE);
 		FS::mkdir($dir);
