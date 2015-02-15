@@ -2,7 +2,7 @@ geo-completer{
 	>fieldset{
 		@?include grid(*,100,100);
 		>div{
-			height:2em;
+			height:auto;/*2em*/
 			border-radius: 5px;
 			background: #fff;
 			>div{
