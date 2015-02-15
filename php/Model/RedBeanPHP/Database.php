@@ -839,5 +839,12 @@ class Database{
 		$cooker->setToolbox($this->getToolBox());
 		return $cooker->graph($array, $fe);
 	}
-	
+###adddd
+	function getAll4D(){
+		return Query::explodeAggTable(call_user_func_array(['self','getAll'],func_get_args()));
+	}
+	function getRow4D(){
+		return Query::explodeAgg(call_user_func_array(['self','getRow'],func_get_args()));
+	}	
+
 }
