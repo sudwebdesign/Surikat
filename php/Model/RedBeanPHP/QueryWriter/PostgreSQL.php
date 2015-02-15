@@ -419,7 +419,7 @@ class PostgreSQL extends AQueryWriter implements QueryWriter
 					case '<':
 						$c = 'COALESCE('.$writer->autoWrapCol($q.$this->prefix.$localTable.$q.'.'.$q.$localCol.$q,$localTable,$localCol).",''{$aggc})";
 						$gb = $q.$this->prefix.$localTable.$q.'.'.$q.$localCol.$q;
-						if($this->columnExists($localTable,$localCol.'_id')){
+						if($this->columnExists($localTable,$localCol/*.'_id'*/)){
 							if(!in_array($gb,$groupBy))
 								$groupBy[] = $gb;
 							$gb = $q.$this->prefix.$localTable.$q.'.'.$q.'id'.$q;
