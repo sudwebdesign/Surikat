@@ -2,8 +2,7 @@
 
 namespace Surikat\Model\RedBeanPHP\Driver;
 
-use Surikat\Core\Dev;
-use Surikat\Core\Chrono;
+use Surikat\DependencyInjection\MutatorMagic;
 use Surikat\Model\SqlFormatter;
 use Surikat\Model\RedBeanPHP\Driver as Driver;
 use Surikat\Model\RedBeanPHP\Logger as Logger;
@@ -28,6 +27,7 @@ use Surikat\Model\RedBeanPHP\PDOCompatible as PDOCompatible;
  */
 class RPDO implements Driver
 {
+	use MutatorMagic;
 	/**
 	* @var integer
 	*/
@@ -133,7 +133,7 @@ class RPDO implements Driver
 	protected function runQuery( $sql, $bindings, $options = [] )
 	{
 		$this->connect();
-		if(Dev::has(Dev::SQL)||Dev::has(Dev::DBSPEED))
+		if($this->Dev_Level->SQL||$this->Dev_Level->DBSPEED)
 			$this->debugger()->logOpen();
 		
 		$sql = str_replace('{#prefix}',$this->DB->getPrefix(),$sql);
@@ -141,7 +141,7 @@ class RPDO implements Driver
 		if ( $this->debug && $this->logger ) {
 			$this->logger->log( $sql, $bindings );
 		}
-		if(Dev::has(Dev::SQL))
+		if($this->Dev_Level->SQL)
 			$this->debugger()->log(SqlFormatter::format($sql), $bindings);
 
 		try {
@@ -153,11 +153,11 @@ class RPDO implements Driver
 
 			$this->bindParams( $statement, $bindings );
 
-			if(Dev::has(Dev::DBSPEED))
-				Chrono::start($suid=uniqid());
+			if($this->Dev_Level->DBSPEED)
+				$Chrono = $this->getNew('Dev\Chrono');
 			$statement->execute();
-			if(Dev::has(Dev::DBSPEED)){
-				$this->debugger()->log('<span style="color:#d00;">'.Chrono::display($suid).'</span>');
+			if($this->Dev_Level->DBSPEED){
+				$this->debugger()->log('<span style="color:#d00;">'.$Chrono->display().'</span>');
 				if(strpos($sql,'CREATE')!==0&&strpos($sql,'ALTER')!==0){
 					if ( strpos( 'pgsql', $this->dsn ) === 0 ) {
 						$explain = $this->pdo->prepare( 'EXPLAIN '.$sql, [\PDO::PGSQL_ATTR_DISABLE_NATIVE_PREPARED_STATEMENT => TRUE ] );
@@ -187,7 +187,7 @@ class RPDO implements Driver
 						$this->logger->log( 'resultset: ' . count( $this->resultArray ) . ' rows' );
 					}
 					
-					if(Dev::has(Dev::SQL))
+					if($this->Dev_Level->SQL)
 						$this->debugger()->log('resultset: <span style="color:#d00;">' . count( $this->resultArray ) . ' rows</span>');
 				}
 				else{
@@ -205,13 +205,13 @@ class RPDO implements Driver
 			if ( $this->debug && $this->logger )
 				$this->logger->log( 'An error occurred: ' . $err );
 			
-			if(Dev::has(Dev::MODEL)){
-				if(!(Dev::has(Dev::DBSPEED)||Dev::has(Dev::SQL)))
+			if($this->Dev_Level->MODEL){
+				if(!($this->Dev_Level->DBSPEED||$this->Dev_Level->SQL))
 					$this->debugger()->logOpen();
 					$this->debugger()->log('An error occurred: '.$err);
-				if(!Dev::has(Dev::SQL))
+				if(!$this->Dev_Level->SQL)
 					$this->debugger()->log(SqlFormatter::format($sql), $bindings);
-				if(!(Dev::has(Dev::DBSPEED)||Dev::has(Dev::SQL)))
+				if(!($this->Dev_Level->DBSPEED||$this->Dev_Level->SQL))
 					$this->debugger()->logClose();
 			}
 				
@@ -221,7 +221,7 @@ class RPDO implements Driver
 			throw $exception;
 		}
 		
-		if(Dev::has(Dev::SQL)||Dev::has(Dev::DBSPEED))
+		if($this->Dev_Level->SQL||$this->Dev_Level->DBSPEED)
 			$this->debugger()->logClose();
 	}
 
@@ -343,7 +343,7 @@ class RPDO implements Driver
 
 			$dbname  = ( preg_match( '/dbname=(\w+)/', $this->dsn, $matches ) ) ? $matches[1] : '?';
 			$msg = 'Could not connect to database (' . $dbname . ').';
-			if(Dev::has(Dev::MODEL))
+			if($this->Dev_Level->MODEL)
 				$msg .= ' '.$exception->getMessage();
 			throw new\PDOException( $msg, $exception->getCode() );
 		}

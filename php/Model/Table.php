@@ -23,11 +23,10 @@ onDeleted	R::trash		$model->after_delete()	DELETE		DELETE	DELETE
 use Surikat\Model\RedBeanPHP\OODBBean;
 use Surikat\Model\RedBeanPHP\SimpleModel;
 use Surikat\Model\RedBeanPHP\QueryWriter\AQueryWriter;
-use Surikat\Core\Dev;
-use Surikat\Tool\JSON;
-use Surikat\Core\Sync;
+use Surikat\Vars\JSON;
+use Surikat\Cache\Sync;
 use BadMethodCallException;
-use Model\Exception_Validation; //for allowing mirrored exception class catching and (optional) hook
+use Exception\ModelValidation as ExceptionModelValidation; //for allowing mirrored exception class catching and (optional) hook
 class Table extends SimpleModel implements \ArrayAccess,\IteratorAggregate{
 	#<workflow CRUD>
 	function onNew(){}
@@ -117,7 +116,7 @@ class Table extends SimpleModel implements \ArrayAccess,\IteratorAggregate{
 		return $this;
 	}
 	function throwValidationError($e=null){
-		throw new Exception_Validation('Données manquantes ou erronées',$e);
+		throw new ExceptionModelValidation('Données manquantes ou erronées',$e);
 	}
 	function _relationsKeysRestore(){
 		foreach($this->_relationsKeysStore as $k=>$v)
@@ -285,7 +284,7 @@ class Table extends SimpleModel implements \ArrayAccess,\IteratorAggregate{
 				if(!is_array($a))
 					$a = (array)$a;
 				array_unshift($a,$this->$col);
-				$this->$col = call_user_func_array(['Tool\\filter',$f],$a);
+				$this->$col = call_user_func_array(['Validation\\Filter',$f],$a);
 			}
 		}
 	}
@@ -299,7 +298,7 @@ class Table extends SimpleModel implements \ArrayAccess,\IteratorAggregate{
 				if(!is_array($a))
 					$a = (array)$a;
 				array_unshift($a,$this->$col);
-				if(!call_user_func_array(['Core\\Ruler',$f],$a))
+				if(!call_user_func_array(['Validation\\Ruler',$f],$a))
 					$this->error($col,'ruler '.$f.' with value '.array_shift($a).' and with params "'.implode('","',$a).'"');
 			}
 		}

@@ -1,13 +1,13 @@
 <?php namespace Surikat\Controller;
-use Surikat\Core\Dev;
-use Surikat\Core\HTTP;
-use Core\Domain;
-use Surikat\Core\ArrayObject;
-use Surikat\View\View;
-use Surikat\View\TML;
-use Surikat\View\Toolbox as ViewToolbox;
+use Surikat\HTTP\HTTP;
+use HTTP\Domain;
+use Surikat\Vars\ArrayObject;
+use Surikat\Templator\Template;
+use Surikat\Templator\TML;
 use Surikat\I18n\Lang;
+use Surikat\DependencyInjection\MutatorMagic;
 class Controller{
+	use MutatorMagic;
 	protected $Router;
 	protected $View;
 	protected $prefixTmlCompile = '';
@@ -26,9 +26,9 @@ class Controller{
 		$v->onCompile(function($TML){
 			if(!isset($TML->childNodes[0])||$TML->childNodes[0]->namespace!='Presenter')
 				$TML->prepend('<Presenter:Presenter uri="static" />');
-			ViewToolbox::JsIs($TML);
-			if(!Dev::has(Dev::VIEW))
-				ViewToolbox::autoMIN($TML);
+			$this->Templator_Toolbox->JsIs($TML);
+			if(!$this->Dev_Level->VIEW)
+				$this->Templator_Toolbox->autoMIN($TML);
 		});
 		$this->display($path.'.tml');
 	}
@@ -43,7 +43,7 @@ class Controller{
 	}
 	function getView(){
 		if(!isset($this->View)){
-			$this->setView(new View());
+			$this->setView(new Template());
 			$this->View->setController($this);
 		}
 		return $this->View;
@@ -59,7 +59,7 @@ class Controller{
 		try{
 			$v->display($file);
 		}
-		catch(\Surikat\View\Exception $e){
+		catch(\Surikat\Exception\View $e){
 			$this->error($e->getMessage());
 		}
 	}
@@ -69,7 +69,7 @@ class Controller{
 			$v->set('URI',$this->getRouter());
 			$v->display($c.'.tml');
 		}
-		catch(\Surikat\View\Exception $e){
+		catch(\Surikat\Exception\View $e){
 			HTTP::code($e->getMessage());
 		}
 		exit;

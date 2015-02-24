@@ -1,7 +1,7 @@
 <?php namespace Surikat\Model;
-use Surikat\Core\Dev;
-use Surikat\Core\Config;
-use Surikat\Core\STR;
+use Surikat\DependencyInjection\Container;
+use Surikat\Config\Config;
+use Surikat\Vars\STR;
 class R extends RedBeanPHP\Facade{
 	static function loadDB($key){
 		$getter = 'db';
@@ -32,7 +32,7 @@ class R extends RedBeanPHP\Facade{
 		if($name)
 			$name = ';dbname='.$name;
 		if(!isset($frozen))
-			$frozen = !Dev::has(Dev::DB);		
+			$frozen = !Container::get('Dev\Level')->DB;
 		if(!isset($case))
 			$case = true;
 		$dsn = $type.':'.$host.$port.$name;

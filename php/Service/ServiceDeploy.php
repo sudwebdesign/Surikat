@@ -1,7 +1,7 @@
 <?php namespace Surikat\Service;
-use Surikat\Core\HTTP;
-use Surikat\Tool\GitDeploy\GitDeploy;
-use Suriakt\Tool\Auth;
+use Surikat\HTTP\HTTP;
+use Surikat\Git\GitDeploy\GitDeploy;
+use Suriakt\User\Auth;
 class ServiceDeploy{
 	protected static function directOutput(){
 		set_time_limit(0);

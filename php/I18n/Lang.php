@@ -1,9 +1,11 @@
 <?php
 namespace Surikat\I18n{
-	use Surikat\Core\Dev;
-	use Surikat\Core\Config;
+	use Surikat\DependencyInjection\MutatorMagic;
+	use Surikat\Config\Config;
 	use Surikat\I18n\GettextEmulator;
 	class Lang {
+		use MutatorMagic;
+		
 		private $locale;
 		private $domain;
 		private $originLocale;
@@ -94,7 +96,7 @@ namespace Surikat\I18n{
 			$this->originLocale = $locale;
 			$this->locale = $locale;
 			$this->domain = $domain;
-			if(Dev::has(Dev::I18N))
+			if($this->Dev_Level->I18N)
 				$this->realDomain = $this->getLastMoFile();
 			else
 				$this->realDomain = $this->domain;

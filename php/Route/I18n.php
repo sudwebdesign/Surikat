@@ -1,10 +1,12 @@
 <?php namespace Surikat\Route;
 use ArrayAccess;
-use Surikat\Core\Config;
-use Core\Domain;
+use Surikat\Config\Config;
+use HTTP\Domain;
 use I18n\Lang;
-use Surikat\View\Toolbox as View_Toolbox;
+use Surikat\DependencyInjection\MutatorMagic;
 class I18n extends Faceted {
+	use MutatorMagic;
+	
 	protected $Dispatcher;
 	function __construct($Dispatcher){
 		$this->Dispatcher = $Dispatcher;
@@ -34,8 +36,8 @@ class I18n extends Faceted {
 		$ctrl = $this->Dispatcher->getController();
 		$ctrl->addPrefixTmlCompile('.'.$lang.'/');		
 		$ctrl->getView()->onCompile(function($TML)use($lang,$path,$langMap){
-			View_Toolbox::i18nGettext($TML);
-			View_Toolbox::i18nRel($TML,$lang,$path,$langMap);
+			$this->Templator_Toolbox->i18nGettext($TML);
+			$this->Templator_Toolbox->i18nRel($TML,$lang,$path,$langMap);
 			if($langMap){
 				foreach($TML('a[href]') as $a){
 					if(strpos($a->href,'://')===false&&strpos($a->href,'javascript:')!==0&&strpos($a->href,'#')!==0){

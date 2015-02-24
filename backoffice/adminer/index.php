@@ -1,7 +1,7 @@
 <?php
 //restore_error_handler();
-use Surikat\Core\Dev;
-Dev::off(Dev::PHP);
+use Surikat\DependencyInjection\Container;
+Container::get('Dev\Level')->PHP();
 function adminer_object() {
     include_once __DIR__.'/plugins/plugin.php';
     foreach (glob(__DIR__.'/plugins/*.php') as $filename) {
@@ -45,7 +45,6 @@ function adminer_object() {
     return new AdminerSurikat($plugins);
 }
 //$_SERVER['SCRIPT_FILENAME'] = __FILE__;
-//Core\Session::start();
 //include __DIR__.'/adminer.inc';
 chdir(__DIR__.'/adminer');
 include 'index.php';
