@@ -11,7 +11,7 @@ use Surikat\Model\RedBeanPHP\TagManager as TagManager;
 use Surikat\Model\RedBeanPHP\DuplicationManager as DuplicationManager;
 use Surikat\Model\RedBeanPHP\LabelMaker as LabelMaker;
 use Surikat\Model\RedBeanPHP\Finder as Finder;
-use Surikat\Model\RedBeanPHP\RedException\SQL as SQL;
+use Surikat\Model\RedBeanPHP\RedException\SQL as SQLException;
 use Surikat\Model\RedBeanPHP\RedException\Security as Security;
 use Surikat\Model\RedBeanPHP\Logger as Logger;
 use Surikat\Model\RedBeanPHP\Logger\RDefault as RDefault;
@@ -43,6 +43,7 @@ class Database{
 	private $labelMaker;
 	private $finder;
 	private $plugins = [];
+	private $logger;
 	private $exportCaseStyle = 'default';
 	
 	private $dbType;
@@ -101,7 +102,7 @@ class Database{
 		if ( !isset( $writers[$wkey] ) ) trigger_error( 'Unsupported DSN: '.$wkey );
 		$writerClass = '\\Surikat\\Model\\RedBeanPHP\\QueryWriter\\'.$writers[$wkey];
 		$this->writer      = new $writerClass( $this->adapter, $this, $prefix, $case );
-		$this->redbean     = new OODB( $this->writer );
+		$this->redbean     = new OODB( $this->writer, $frozen );
 		$this->redbean->freeze( ( $frozen === TRUE ) );
 		$this->toolbox = new ToolBox( $this->redbean, $this->adapter, $this->writer, $this );
 		return $this->toolbox;
@@ -111,7 +112,7 @@ class Database{
 		if ( !$this->redbean->isFrozen() ) {
 			try {
 				$rs = $this->adapter->$method( $sql, $bindings );
-			} catch ( SQL $exception ) {
+			} catch ( SQLException $exception ) {
 				if ( $this->writer->sqlStateIn( $exception->getSQLState(),
 					[
 						QueryWriter::C_SQLSTATE_NO_SUCH_COLUMN,
@@ -128,10 +129,6 @@ class Database{
 		} else {
 			return $this->adapter->$method( $sql, $bindings );
 		}
-	}
-	
-	function fetch($sql, $bindings = []){
-		return $this->adapter->fetch( $sql, $bindings );
 	}
 	
 	function exists(){
@@ -242,14 +239,23 @@ class Database{
 		return $types;
 	}
 
-	function trash( $bean ){
-		$this->redbean->trash( $bean );
+	function trash($beanOrType,$id=null){
+		if(is_string($beanOrType))
+			return $this->trash( $this->load( $beanOrType, $id ) );
+		return $this->redbean->trash( $beanOrType );
 	}
 
 	function dispense($typeOrBeanArray,$num=1,$alwaysReturnArray=false){
 		if(is_array($typeOrBeanArray)){
-			if (!isset( $typeOrBeanArray['_type'] ) )
-				throw new RedException('Missing _type field.');
+			if ( !isset( $typeOrBeanArray['_type'] ) ) {
+				$list = array();
+				foreach( $typeOrBeanArray as $beanArray )
+					if ( !( is_array( $beanArray ) && isset( $beanArray['_type'] ) ) )
+						throw new RedException( 'Invalid Array Bean' );
+				foreach( $typeOrBeanArray as $beanArray )
+					$list[] = $this->dispense( $beanArray );
+				return $list;
+			}
 			$import = $typeOrBeanArray;
 			$type = $import['_type'];
 			unset( $import['_type'] );
@@ -335,6 +341,10 @@ class Database{
 	{
 		return $this->query( 'getAssocRow', $sql, $bindings );
 	}
+	
+	function fetch($sql, $bindings = []){
+		return $this->adapter->fetch( $sql, $bindings );
+	}
 
 	function duplicate( $bean, $filters = array() ){
 		return $this->dup( $bean, array(), FALSE, $filters );
@@ -416,10 +426,6 @@ class Database{
 
 	function getColumns( $table ){
 		return $this->writer->getColumns( $table );
-	}
-
-	function genSlots( $array ){
-		return ( count( $array ) ) ? implode( ',', array_fill( 0, count( $array ), '?' ) ) : '';
 	}
 
 	function nuke(){
@@ -806,6 +812,21 @@ class Database{
 	{
 		return $this->finder->findLast( $this->writer->adaptCase($type), $sql, $bindings );
 	}
+	
+	/**
+	 * Finds a bean collection.
+	 * Use this for large datasets.
+	 *
+	 * @param string $type     type   the type of bean you are looking for
+	 * @param string $sql      sql    SQL query to find the desired bean, starting right after WHERE clause
+	 * @param array  $bindings values array of values to be bound to parameters in query
+	 *
+	 * @return BeanCollection
+	 */
+	public static function findCollection( $type, $sql = NULL, $bindings = array() )
+	{
+		return $this->finder->findCollection( $type, $sql, $bindings );
+	}
 
 	function _uniqSetter($type,$values){
 		if(is_string($values)){
@@ -824,6 +845,180 @@ class Database{
 	}
 	function safeColumn($t){
 		return $this->writer->safeColumn($t);
+	}
+	
+	/**
+	* Sets global aliases.
+	*
+	* @param array $list
+	*
+	* @return void
+	*/
+	public function aliases( $list ){
+		OODBBean::aliases( $list );
+	}
+	
+	/**
+	 * Tries to find a bean matching a certain type and
+	 * criteria set. If no beans are found a new bean
+	 * will be created, the criteria will be imported into this
+	 * bean and the bean will be stored and returned.
+	 * If multiple beans match the criteria only the first one
+	 * will be returned.
+	 *
+	 * @param string $type type of bean to search for
+	 * @param array  $like criteria set describing the bean to search for
+	 *
+	 * @return OODBBean
+	 */
+	public function findOrCreate( $type, $like = array() )
+	{
+		return $this->finder->findOrCreate( $type, $like );
+	}
+
+	/**
+	 * Tries to find beans matching the specified type and
+	 * criteria set.
+	 *
+	 * @param string $type type of bean to search for
+	 * @param array  $like criteria set describing the bean to search for
+	 *
+	 * @return array
+	 */
+	public function findLike( $type, $like = array(), $sql = '' )
+	{
+		return $this->finder->findLike( $type, $like, $sql );
+	}
+	
+	/**
+	 * Starts logging queries.
+	 * Use this method to start logging SQL queries being
+	 * executed by the adapter.
+	 *
+	 * @note you cannot use R::debug and R::startLogging
+	 * at the same time because R::debug is essentially a
+	 * special kind of logging.
+	 *
+	 * @return void
+	 */
+	public function startLogging()
+	{
+		$this->debug( TRUE, RDefault::C_LOGGER_ARRAY );
+	}
+
+	/**
+	 * Stops logging, comfortable method to stop logging of queries.
+	 *
+	 * @return void
+	 */
+	public function stopLogging()
+	{
+		$this->debug( FALSE );
+	}
+
+	/**
+	 * Returns the log entries written after the startLogging.
+	 *
+	 * @return array
+	 */
+	public function getLogs()
+	{
+		return $this->getLogger()->getLogs();
+	}
+
+	/**
+	 * Resets the Query counter.
+	 *
+	 * @return integer
+	 */
+	public function resetQueryCount()
+	{
+		$this->adapter->getDatabase()->resetCounter();
+	}
+
+	/**
+	 * Returns the number of SQL queries processed.
+	 *
+	 * @return integer
+	 */
+	public function getQueryCount()
+	{
+		return $this->adapter->getDatabase()->getQueryCount();
+	}
+
+	/**
+	 * Returns the current logger instance being used by the
+	 * database object.
+	 *
+	 * @return Logger
+	 */
+	public function getLogger()
+	{
+		return $this->adapter->getDatabase()->getLogger();
+	}
+	
+	/**
+	 * Turns on the fancy debugger.
+	 */
+	public function fancyDebug( $toggle )
+	{
+		$this->debug( $toggle, 2 );
+	}
+	
+	/**
+	* Flattens a multi dimensional bindings array for use with genSlots().
+	*
+	* @param array $array array to flatten
+	*
+	* @return array
+	*/
+	public function flat( $array, $result = array() )
+	{
+		foreach( $array as $value ) {
+			if ( is_array( $value ) ) $result = $this->flat( $value, $result );
+			else $result[] = $value;
+		}
+		return $result;
+	}
+
+	/**
+	 * Generates question mark slots for an array of values.
+	 *
+	 * @param array  $array    array to generate question mark slots for
+	 *
+	 * @return string
+	 */
+	public function genSlots( $array, $template = NULL )
+	{
+		$str = count( $array ) ? implode( ',', array_fill( 0, count( $array ), '?' ) ) : '';
+		return ( is_null( $template ) ||  $str === '' ) ? $str : sprintf( $template, $str );
+	}
+	
+	/**
+	 * Alias for setAutoResolve() method on OODBBean.
+	 * Enables or disables auto-resolving fetch types.
+	 * Auto-resolving aliased parent beans is convenient but can
+	 * be slower and can create infinite recursion if you
+	 * used aliases to break cyclic relations in your domain.
+	 *
+	 * @param boolean $automatic TRUE to enable automatic resolving aliased parents
+	 *
+	 * @return void
+	 */
+	public function setAutoResolve( $automatic = TRUE )
+	{
+		OODBBean::setAutoResolve( (boolean) $automatic );
+	}
+	
+	/**
+	 * Returns the insert ID for databases that support/require this
+	 * functionality. Alias for R::getAdapter()->getInsertID().
+	 *
+	 * @return mixed
+	 */
+	public function getInsertID()
+	{
+		return $this->adapter->getInsertID();
 	}
 	
 	function preload($beans, $preload, $closure = NULL){

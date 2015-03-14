@@ -16,16 +16,16 @@ class Index extends ViewController{
 		return call_user_func_array([$this,'getController'],func_get_args());
 	}
 	function convention(){
-		$this->append('service/',['Surikat\Service\Service','method']);
-		$this->append(['new','Surikat\Route\Extension','css|js|png|jpg|jpeg|gif'], ['new','Surikat\Dispatcher\Synaptic']);
-		$this->append(['new','Surikat\Route\ByTml','plugin'],$this);
-		$this->append(['new','Surikat\Route\ByTml'],$this);
+		$this->append('service/',['Service']);
+		$this->append(['Route_Extension','css|js|png|jpg|jpeg|gif'], ['Dispatcher_Synaptic']);
+		$this->append(['Route_ByTml','plugin'],$this);
+		$this->append(['Route_ByTml'],$this);
 		if($this->i18nConvention)
-			$this->prepend(['new','Surikat\Route\I18n',$this],$this);
+			$this->prepend(['Route_I18n',$this],$this);
 		if($this->backoffice){
 			if($this->backoffice===true)
 				$this->backoffice = 'backoffice/';
-			$this->prepend($this->backoffice,['Dispatcher\Backoffice','runner']);
+			$this->prepend($this->backoffice,['Dispatcher_Backoffice']);
 		}
 	}
 	function run($path){

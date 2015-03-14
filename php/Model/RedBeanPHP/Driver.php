@@ -5,7 +5,7 @@ namespace Surikat\Model\RedBeanPHP;
 /**
  * Interface for database drivers
  *
- * @file       RedBean/Driver.php
+ * @file       RedBeanPHP/Driver.php
  * @desc       Describes the API for database classes
  * @author     Gabor de Mooij and the RedBeanPHP Community
  * @license    BSD/GPLv2
@@ -48,7 +48,7 @@ interface Driver
 	 *
 	 * @return mixed
 	 */
-	public function GetCell( $sql, $bindings = [] );
+	public function GetOne( $sql, $bindings = [] );
 	
 	/**
 	 * Runs a query and returns results as an associative array
@@ -104,7 +104,17 @@ interface Driver
 	 * @return integer
 	 */
 	public function Affected_Rows();
-
+	
+	/**
+	 * Returns a cursor-like object from the database.
+	 *
+	 * @param string $sql      SQL code to execute
+	 * @param array  $bindings Bindings
+	 *
+	 * @return mixed
+	 */
+	public function GetCursor( $sql, $bindings = array() );
+	
 	/**
 	 * Toggles debug mode. In debug mode the driver will print all
 	 * SQL to the screen together with some information about the
@@ -138,4 +148,18 @@ interface Driver
 	 * @return void
 	 */
 	public function FailTrans();
+	
+	/**
+	 * Resets the internal Query Counter.
+	 *
+	 * @return self
+	 */
+	public function resetCounter();
+
+	/**
+	 * Returns the number of SQL queries processed.
+	 *
+	 * @return integer
+	 */
+	public function getQueryCount();
 }

@@ -1,17 +1,18 @@
 <?php namespace Surikat\User;
 use Surikat\Config\Config;
 use Surikat\FileSystem\FS;
-use Surikat\HTTP\HTTP;
 use Surikat\Model\R;
+use Surikat\User\Session as User_Session;
 use Surikat\Mail\PHPMailer;
 use Surikat\DependencyInjection\MutatorMagic;
-use HTTP\Domain;
+use Surikat\DependencyInjection\Constant;
 use Exception;
 if (version_compare(phpversion(), '5.5.0', '<')){
 	require_once SURIKAT_SPATH.'php/Crypto/password-compat.inc.php';
 }
 class Auth{
 	use MutatorMagic;
+	use Constant;
 	
 	const RIGHT_MANAGE = 2;
 	const RIGHT_EDIT = 4;
@@ -71,36 +72,42 @@ class Auth{
 	const OK_PASSWORD_RESET = 43;
 	const OK_RESET_REQUESTED = 44;
 	const OK_ACTIVATION_SENT = 45;
-	
-	static $instances;
+
+	public $siteUrl;
 	private $db;
+	private $right;
 	protected $tableRequests = 'request';
 	protected $tableUsers = 'user';
-	protected $siteUrl;
 	protected $cost = 10;
 	protected $algo;
 	protected $superRoot = 'root';
 	protected $config = [];
-		
-	static function connected(){
-		return self::instance()->isConnected();
+	public function __construct(User_Session $User_Session=null){
+		if($User_Session)
+			$this->User_Session = $User_Session;
+
+		$this->config = Config::auth();
+		$dbm = 'db';
+		if(isset($this->config['db'])&&$this->config['db'])
+			$dbm .= '_'.$this->config['db'];
+		$db = Config::$dbm();
+		if((isset($db['name'])&&$db['name'])||(isset($db['file'])&&$db['file'])){
+			$this->db = R::getDatabase(isset($this->config['db'])?$this->config['db']:null);
+		}
+		if(isset($this->config['siteUrl'])&&$this->config['siteUrl'])
+			$this->siteUrl = $this->config['siteUrl'];
+		else
+			$this->siteUrl = $this->HTTP_URL->getBaseHref();
+		$this->siteUrl = rtrim($this->siteUrl,'/').'/';
+		if(isset($this->config['tableUsers'])&&$this->config['tableUsers'])
+			$this->tableUsers = $this->config['tableUsers'];
+		if(isset($this->config['tableRequests'])&&$this->config['tableRequests'])
+			$this->tableRequests = $this->config['tableRequests'];
+		if(isset($this->config['algo'])&&$this->config['algo'])
+			$this->algo = $this->config['algo'];
+		else
+			$this->algo = PASSWORD_DEFAULT;
 	}
-	static function allowed($right){
-		return self::instance()->isAllowed($right);
-	}
-	static function lock($right,$redirect=true){
-		return self::instance()->_lock($right,$redirect);
-	}
-	static function lockServer($right){
-		return self::instance()->_lockServer($right);
-	}
-	
-	static function instance($k=0){
-		if(!isset(self::$instances[$k]))
-			self::$instances[$k] = new static();
-		return self::$instances[$k];
-	}
-	
 	function sendMail($email, $type, $key, $login){
 		$config = Config::mailer();
 				
@@ -122,29 +129,6 @@ class Auth{
 		}
 		return PHPMailer::mail([$email=>$login],$subject,$message);
 	}
-	public function __construct(){
-		$this->config = Config::auth();
-		$dbm = 'db';
-		if(isset($this->config['db'])&&$this->config['db'])
-			$dbm .= '_'.$this->config['db'];
-		$db = Config::$dbm();
-		if((isset($db['name'])&&$db['name'])||(isset($db['file'])&&$db['file'])){
-			$this->db = R::getDatabase(isset($this->config['db'])?$this->config['db']:null);
-		}
-		if(isset($this->config['siteUrl'])&&$this->config['siteUrl'])
-			$this->siteUrl = $this->config['siteUrl'];
-		else
-			$this->siteUrl = Domain::getBaseHref();
-		$this->siteUrl = rtrim($this->siteUrl,'/').'/';
-		if(isset($this->config['tableUsers'])&&$this->config['tableUsers'])
-			$this->tableUsers = $this->config['tableUsers'];
-		if(isset($this->config['tableRequests'])&&$this->config['tableRequests'])
-			$this->tableRequests = $this->config['tableRequests'];
-		if(isset($this->config['algo'])&&$this->config['algo'])
-			$this->algo = $this->config['algo'];
-		else
-			$this->algo = PASSWORD_DEFAULT;
-	}
 	public function loginRoot($password,$lifetime=0){
 		$pass = $this->config['root'];
 		if(!$pass)
@@ -157,7 +141,7 @@ class Auth{
 			}
 		}
 		else{
-			if(!password_verify($password, $pass)){
+			if(!($password&&password_verify($password, $pass))){
 				$this->User_Session->addAttempt();
 				return self::ERROR_LOGIN_PASSWORD_INCORRECT;
 			}
@@ -208,7 +192,7 @@ class Auth{
 			'name'=>$email,
 			'email'=>$email,
 			'type'=>'persona',
-			'right'=>static::ROLE_MEMBER,
+			'right'=>self::ROLE_MEMBER,
 			'active'=>1,
 		];
 		if($this->db){
@@ -246,7 +230,7 @@ class Auth{
 			return self::ERROR_LOGIN_PASSWORD_INCORRECT;
 		}
 		$user = $this->getUser($uid);
-		if(!password_verify($password, $user['password'])){
+		if(!($password&&password_verify($password, $user['password']))){
 			$this->User_Session->addAttempt();
 			return self::ERROR_LOGIN_PASSWORD_INCORRECT;
 		}
@@ -338,7 +322,7 @@ class Auth{
 		return self::OK_RESET_REQUESTED;
 	}
 	public function logout(){
-		if($this->isConnected()&&$this->User_Session->destroy()){
+		if($this->connected()&&$this->User_Session->destroy()){
 			return self::OK_LOGGED_OUT;
 		}
 		return $this->User_Session->destroy();
@@ -389,7 +373,7 @@ class Auth{
 		$row->email = $email;
 		$row->password = $password;
 		$row->salt = $salt;
-		$row->right = static::ROLE_MEMBER;
+		$row->right = self::ROLE_MEMBER;
 		$row->type = 'local';
 		if(!$row->store()){
 			$row->trash();
@@ -410,7 +394,7 @@ class Auth{
 			return $e;
 		}
 		$getUser = $this->getUser($uid);
-		if(!password_verify($password, $getUser['password'])){
+		if(!($password&&password_verify($password, $getUser['password']))){
 			$this->User_Session->addAttempt();
 			return self::ERROR_PASSWORD_INCORRECT;
 		}
@@ -438,7 +422,7 @@ class Auth{
 		if($type == "activation" && isset($user['active']) && $user['active'] == 1){
 			return self::ERROR_ALREADY_ACTIVATED;
 		}
-		$key = self::getRandomKey(40);
+		$key = $this->Crypto_RandomLib_Factory()->getMediumStrengthGenerator()->generate(40);
 		$expire = date("Y-m-d H:i:s", strtotime("+1 day"));
 		$user['xown'.ucfirst($this->tableRequests)][] = $this->db->create($this->tableRequests,['rkey'=>$key, 'expire'=>$expire, 'type'=>$type]);
 		if(!$user->store()){
@@ -481,7 +465,7 @@ class Auth{
 			return self::ERROR_LOGIN_SHORT;
 		elseif (strlen($login) > 30)
 			return self::ERROR_LOGIN_LONG;
-		elseif (!ctype_alnum($login))
+		elseif(!ctype_alnum($login)&&!filter_var($login, FILTER_VALIDATE_EMAIL))
 			return self::ERROR_LOGIN_INVALID;
 	}
 	public function validateDisplayname($login){
@@ -521,7 +505,7 @@ class Auth{
 			$this->deleteRequest($data['id']);
 			return self::ERROR_SYSTEM_ERROR;
 		}
-		if(!password_verify($password, $user['password'])){			
+		if(!($password&&password_verify($password, $user['password']))){
 			$password = $this->getHash($password, $user['salt']);
 			$row = $this->db->load($this->tableUsers,$data[$this->tableUsers.'_id']);
 			$row->password = $password;
@@ -539,7 +523,6 @@ class Auth{
 		if($e=$this->validateEmail($email))
 			return $r;
 		$row = $this->db->findOne($this->tableUsers,' WHERE email = ?',[$email]);
-		var_dump($row);
 		if(!$row){
 			$this->User_Session->addAttempt();
 			return self::ERROR_EMAIL_INCORRECT;
@@ -573,7 +556,7 @@ class Auth{
 			return self::ERROR_SYSTEM_ERROR;
 		}
 		$newpass = $this->getHash($newpass, $user['salt']);
-		if(!password_verify($currpass, $user['password'])){
+		if(!($password&&password_verify($currpass, $user['password']))){
 			$this->User_Session->addAttempt();
 			return self::ERROR_PASSWORD_INCORRECT;
 		}
@@ -604,7 +587,7 @@ class Auth{
 			$this->User_Session->addAttempt();
 			return self::ERROR_SYSTEM_ERROR;
 		}
-		if(!password_verify($password, $user['password'])){
+		if(!($password&&password_verify($password, $user['password']))){
 			$this->User_Session->addAttempt();
 			return self::ERROR_PASSWORD_INCORRECT;
 		}
@@ -619,15 +602,7 @@ class Auth{
 		}
 		return self::OK_EMAIL_CHANGED;
 	}
-	static function getRandomKey($length = 40){
-		$chars = "A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0U1V2W3X4Y5Z6a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6";
-		$key = "";
-		for ($i = 0; $i < $length; $i++)
-			$key .= $chars{mt_rand(0, strlen($chars) - 1)};
-		return $key;
-	}
-	
-	private $right;
+
 	function getRight(){
 		if(!isset($this->right))
 			$this->right = $this->User_Session->get('_AUTH_','right');
@@ -637,10 +612,10 @@ class Auth{
 		$this->right = $r;
 	}
 	
-	function isConnected(){
+	function connected(){
 		return !!$this->User_Session->get('_AUTH_');
 	}
-	function isAllowed($d){
+	function allowed($d){
 		return !!($d&$this->getRight());
 	}
 	function allow($d){
@@ -650,23 +625,23 @@ class Auth{
 		return $this->setRight($d^$this->getRight());
 	}
 	
-	function _lock($r,$redirect=true){
-		if($this->isAllowed($r))
+	function lock($r,$redirect=true){
+		if($this->allowed($r))
 			return;
-		HTTP::nocacheHeaders();
+		$this->HTTP_Request->nocacheHeaders();
 		if($redirect){
-			if($this->isConnected())
+			if($this->connected())
 				$redirect = '403';
 			if($redirect===true)
 				$redirect = isset($this->config['siteLoginUri'])?$this->config['siteLoginUri']:'403';
 			header('Location: '.$this->siteUrl.$redirect,false,302);
 		}
 		else{
-			HTTP::code(403);
+			$this->HTTP_Request->code(403);
 		}
 		exit;
 	}
-	function _lockServer($r,$redirect=true){
-		return (new AuthServer($this))->htmlLock($r,$redirect);
+	function lockServer($r,$redirect=true){
+		return $this->getDependency('User_AuthServer',$this)->htmlLock($r,$redirect);
 	}
 }

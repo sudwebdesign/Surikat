@@ -262,8 +262,14 @@ abstract class PARSER{
 							$charContainer .= $currentChar;
 							if(substr($charContainer,$lnn)==$nnn){
 								$charContainer = substr($charContainer,0,$lnn);
-								if(trim($charContainer))
-									$on[] = new TEXT($on,'TEXT_UNPARSED',$charContainer,$this);
+								if(trim($charContainer)){
+									$textNode = new TEXT();
+									$textNode->setParent($on);
+									$textNode->setNodeName('TEXT_UNPARSED');
+									$textNode->setBuilder($this);
+									$textNode->parse($charContainer);
+									$on[] = $textNode;
+								}
 								$this->fireEndElement($nn);
 								$charContainer = '';
 								$state = self::STATE_PARSING;
@@ -534,19 +540,27 @@ abstract class PARSER{
 	protected $lineNumber = 1;
 	protected $characterNumber = 1;
 	
-	private function addToCurrent($name,$attributes){
+	private function addToCurrent($name,$attributes,$class=null){
 		if(!$this->currentTag)
 			$this->currentTag = $this;
 		if(($pos=strpos($name,'+'))!==false){
 			$x = explode('+',$name);
 			$a = [];
-			$node = new Group($this->currentTag,$name,$attributes,$this);
+			$node = new Group();
+			$node->setBuilder($this);
+			$node->setParent($this->currentTag);
+			$node->setNodeName($name);
+			$node->make($attributes);
 			$node->lineNumber = $this->lineNumber;
 			$node->characterNumber = $this->characterNumber;
 			$sc = null;
 			foreach($x as $n){
 				$c = self::getClass($n);
-				$g = new $c($this->currentTag,$n,$attributes,$this);
+				$g = new $c();
+				$g->setBuilder($this);
+				$g->setParent($this->currentTag);
+				$g->setNodeName($n);
+				$g->make($attributes);
 				$sc = $g->selfClosed&&$sc!==false;
 				$node->addToGroup($g);
 			}
@@ -554,8 +568,14 @@ abstract class PARSER{
 				$node->selfClosed = true;
 		}
 		else{
-			$c = self::getClass($name);
-			$node = new $c($this->currentTag,$name,$attributes,$this);
+			if($class===true)
+				$class = 'Templator\\'.$name;
+			$c = $class?$class:self::getClass($name);
+			$node = new $c();
+			$node->setBuilder($this);
+			$node->setParent($this->currentTag);
+			$node->setNodeName($name);
+			$node->make($attributes);
 			$node->lineNumber = $this->lineNumber;
 			$node->characterNumber = $this->characterNumber;
 		}
@@ -570,7 +590,7 @@ abstract class PARSER{
 			foreach($x as $n)
 				$this->fireElement($n,$attributes);
 		}
-		$this->addToCurrent(strtolower($name),$attributes)->closed();
+		$this->addToCurrent($name,$attributes)->closed();
 	}
 	private function fireStartElement($name,$attributes,&$state=null){
 		if(($pos=strpos($name,'&'))!==false){
@@ -579,7 +599,7 @@ abstract class PARSER{
 			foreach($x as $n)
 				$this->fireStartElement($n,$attributes);
 		}
-		$this->currentTag = $this->addToCurrent(strtolower($name),$attributes);
+		$this->currentTag = $this->addToCurrent($name,$attributes);
 		if($this->currentTag->noParseContent)
 			$state = self::STATE_NOPARSING;
 		if($this->currentTag->selfClosed===true){
@@ -603,22 +623,23 @@ abstract class PARSER{
 			$this->currentTag = $this->currentTag->parent;
 	}
 	private function fireDTD($doctype){
-		$this->addToCurrent('DOCTYPE',$doctype);
+		$this->addToCurrent('DOCTYPE',$doctype,true);
 	}
 	private function fireComment($comment){
-		$this->addToCurrent('COMMENT',$comment);
+		$this->addToCurrent('COMMENT',$comment,true);
 	}
 	private function fireCharacterData($text){
 		if(trim($text))
-			$this->addToCurrent('TEXT',$text);
+			$this->addToCurrent('TEXT',$text,true);
 	}
 	private function fireCDataSection($text){
-		$this->addToCurrent('CDATA',$text);
+		$this->addToCurrent('CDATA',$text,true);
 	}
 
 	protected static function getClass($n){
 		if($p=strpos($n,':'))
 			$n = substr($n,0,$p);
+		$n = strtolower($n);
 		$n = str_replace('-','_',$n);
 		if(class_exists($c='Templator\\'.(ctype_upper($n)?$n:'TML_'.ucfirst($n))))
 			return $c;
@@ -634,11 +655,12 @@ abstract class PARSER{
 	function evaluate(){
 		return ob_start()&&eval('?>'.$this)!==false?ob_get_clean():'';
 	}
-	protected function parse($arg,$params=null,$noload=null){
+	function parse($arg){
 		$this->clean();
 		if(!is_string($arg))
 			$arg = "$arg";
-		if(isset($params))
+		$n = func_num_args();
+		if($n>1&&($params=func_get_arg(1)))
 			foreach((array)$params as $k=>$v)
 				$arg = str_replace('{{:'.$k.':}}',$v,$arg);
 		$pos = 0;
@@ -646,11 +668,20 @@ abstract class PARSER{
 			foreach($matches[1] as $i=>$eve)
 				$arg = substr($arg,0,$pos=strpos($arg,$matches[0][$i],$pos)).$this->evalue($eve).substr($arg,$pos+strlen($matches[0][$i]));
 		$this->parseML($arg);
-		if(!$noload)
+		if($n<3||!func_get_arg(2))
 			$this->triggerLoaded();
 	}
-	protected function interpret($args){
-		$this->nodeName = array_shift($args);
+	function make($arg){
+		if(is_string($arg)){
+			$this->parse($arg);
+		}
+		else{
+			$this->interpret($arg);
+		}
+	}
+	protected function interpret($attributes,$nodeName=null){
+		if(isset($nodeName))
+			$this->nodeName = $nodeName;
 		if(($pos=strpos($this->nodeName,':'))!==false){
 			$this->namespace = ucfirst(substr($this->nodeName,0,$pos));
 			$this->namespaceClass = ucfirst(substr($this->nodeName,$pos+1));
@@ -658,17 +689,16 @@ abstract class PARSER{
 			foreach(array_keys($this->_namespaces) as $i)
 				$this->_namespaces[$i] = ucfirst($this->_namespaces[$i]);
 		}
-		$this->metaAttribution = (array)array_shift($args);
-		$this->constructor = array_shift($args);
+		$this->metaAttribution = $attributes;
 		$this->opened();
 	}
 	protected function throwException($msg){
-		if($this->View)
+		if($this->Template)
 			$msg .= $this->exceptionContext();
 		throw new ExceptionTML($msg);
 	}
 	function exceptionContext(){
-		return ' on "'.$this->View->getPath().':'.$this->lineNumber.'#'.$this->characterNumber.'"';
+		return ' on "'.$this->Template->getPath().':'.$this->lineNumber.'#'.$this->characterNumber.'"';
 	}
 }
 PARSER::initialize();

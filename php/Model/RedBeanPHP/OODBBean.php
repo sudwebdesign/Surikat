@@ -12,7 +12,7 @@ use Surikat\Model\RedBeanPHP\Database;
 /**
  * OODBBean (Object Oriented DataBase Bean)
  *
- * @file    RedBean/OODBBean.php
+ * @file    RedBeanPHP/OODBBean.php
  * @desc    The Bean class used for passing information
  * @author  Gabor de Mooij and the RedBeanPHP community
  * @license BSD/GPLv2
@@ -81,7 +81,17 @@ class OODBBean implements\IteratorAggregate,\ArrayAccess,\Countable
 	 * @var boolean
 	 */
 	protected $all = FALSE;
-
+	
+	/**
+	 * @var array
+	 */
+	protected static $aliases = array();
+	
+	
+	/**
+	 * @var boolean
+	 */
+	protected static $autoResolve = FALSE;
 	
 	private $database;
 	function __construct(Database $db){
@@ -671,9 +681,9 @@ class OODBBean implements\IteratorAggregate,\ArrayAccess,\Countable
 		if ( ctype_lower( $property ) ) return $property;
 
 		if (
-			strpos( $property, 'own' ) === 0
-			|| strpos( $property, 'xown' ) === 0
-			|| strpos( $property, 'shared' ) === 0
+			( strpos( $property, 'own' ) === 0 && ctype_upper( substr( $property, 3, 1 ) ) )
+			|| ( strpos( $property, 'xown' ) === 0 && ctype_upper( substr( $property, 4, 1 ) ) )
+			|| ( strpos( $property, 'shared' ) === 0 && ctype_upper( substr( $property, 6, 1 ) ) )
 		) {
 
 			$property = preg_replace( '/List$/', '', $property );
@@ -806,8 +816,10 @@ class OODBBean implements\IteratorAggregate,\ArrayAccess,\Countable
 			if ( isset( $this->__info["sys.parentcache.$property"] ) ) {
 				$bean = $this->__info["sys.parentcache.$property"];
 			} else {
-				if ( $this->fetchType ) {
-					$type            = $this->fetchType;
+				if ( isset( self::$aliases[$property] ) ) {
+					$type = self::$aliases[$property];
+				} elseif ( $this->fetchType ) {
+					$type = $this->fetchType;
 					$this->fetchType = NULL;
 				} else {
 					$type = $property;
@@ -816,9 +828,12 @@ class OODBBean implements\IteratorAggregate,\ArrayAccess,\Countable
 				if ( !is_null( $this->properties[$fieldLink] ) ) {
 					$bean = $redbean->load( $type, $this->properties[$fieldLink] );
 					//If the IDs dont match, we failed to load, so try autoresolv in that case...
-					if ( $bean->id !== $this->properties[$fieldLink] ) {
+					if ( $bean->id !== $this->properties[$fieldLink] && self::$autoResolve ) {
 						$type = $this->beanHelper->getToolbox()->getWriter()->inferFetchType( $this->__info['type'], $property );
-						if ( !is_null( $type) ) $bean = $redbean->load( $type, $this->properties[$fieldLink] );
+						if ( !is_null( $type) ){
+							$bean = $redbean->load( $type, $this->properties[$fieldLink] );
+							$this->__info["sys.autoresolved.{$property}"] = $type;
+						}
 					}
 				}
 			}
@@ -1071,15 +1086,13 @@ class OODBBean implements\IteratorAggregate,\ArrayAccess,\Countable
 			} elseif ( self::$errorHandlingFUSE === self::C_ERR_EXCEPTION ) {
 				throw new \Exception( $message );
 			} elseif ( self::$errorHandlingFUSE === self::C_ERR_FUNC ) {
-				if ( is_callable( self::$errorHandler ) ) {
-					$func = self::$errorHandler;
-					return $func(array(
-						'message' => $message,
-						'method' => $method,
-						'args' => $args,
-						'bean' => $this
-					));
-				}
+				$func = self::$errorHandler;
+				return $func(array(
+					'message' => $message,
+					'method' => $method,
+					'args' => $args,
+					'bean' => $this
+				));
 			}
 			trigger_error( $message, E_USER_ERROR );
 			return NULL;
@@ -1362,6 +1375,11 @@ class OODBBean implements\IteratorAggregate,\ArrayAccess,\Countable
 	 * Returns TRUE if the value of a certain property of the bean has been changed and
 	 * FALSE otherwise.
 	 *
+	 * Note that this method will return TRUE if applied to a loaded list.
+	 * Also note that this method keeps track of the bean's history regardless whether
+	 * it has been stored or not. Storing a bean does not undo it's history,
+	 * to clean the history of a bean use: clearHistory().
+	 *
 	 * @param string $property name of the property you want the change-status of
 	 *
 	 * @return boolean
@@ -1371,7 +1389,41 @@ class OODBBean implements\IteratorAggregate,\ArrayAccess,\Countable
 		return ( array_key_exists( $property, $this->properties ) ) ?
 			$this->old( $property ) != $this->properties[$property] : FALSE;
 	}
-
+	
+	/**
+	 * Returns TRUE if the specified list exists, has been loaded and has been changed:
+	 * beans have been added or deleted. This method will not tell you anything about
+	 * the state of the beans in the list.
+	 *
+	 * @param string $property name of the list to check
+	 *
+	 * @return boolean
+	 */
+	public function hasListChanged( $property )
+	{
+		if ( !array_key_exists( $property, $this->properties ) ) return FALSE;
+		$diffAdded = array_diff_assoc( $this->properties[$property], $this->__info['sys.shadow.'.$property] );
+		if ( count( $diffAdded ) ) return TRUE;
+		$diffMissing = array_diff_assoc( $this->__info['sys.shadow.'.$property], $this->properties[$property] );
+		if ( count( $diffMissing ) ) return TRUE;
+		return FALSE;
+	}
+	
+	/**
+	 * Clears (syncs) the history of the bean.
+	 * Resets all shadow values of the bean to their current value.
+	 *
+	 * @return self
+	 */
+	public function clearHistory()
+	{
+		$this->__info['sys.orig'] = array();
+		foreach( $this->properties as $key => $value ) {
+			if ( is_scalar($value) ) $this->__info['sys.orig'][$key] = $value;
+		}
+		return $this;
+	}
+	
 	/**
 	 * Creates a N-M relation by linking an intermediate bean.
 	 * This method can be used to quickly connect beans using indirect
@@ -1692,4 +1744,32 @@ class OODBBean implements\IteratorAggregate,\ArrayAccess,\Countable
 		}
 		return $value;
 	}
+	
+	/**
+	 * Sets aliases.
+	 *
+	 * @param array $list
+	 *
+	 * @return void
+	 */
+	public static function aliases( $list )
+	{
+		self::$aliases = $list;
+	}
+	
+	/**
+	 * Enables or disables auto-resolving fetch types.
+	 * Auto-resolving aliased parent beans is convenient but can
+	 * be slower and can create infinite recursion if you
+	 * used aliases to break cyclic relations in your domain.
+	 *
+	 * @param boolean $automatic TRUE to enable automatic resolving aliased parents
+	 *
+	 * @return void
+	 */
+	public static function setAutoResolve( $automatic = TRUE )
+	{
+		self::$autoResolve = (boolean) $automatic;
+	}
+
 }

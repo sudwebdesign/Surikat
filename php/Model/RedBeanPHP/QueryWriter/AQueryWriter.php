@@ -8,11 +8,12 @@ use Surikat\Model\RedBeanPHP\Adapter\DBAdapter;
 use Surikat\Model\RedBeanPHP\RedException;
 use Surikat\Model\RedBeanPHP\QueryWriter;
 use Surikat\Model\RedBeanPHP\OODBBean;
+use Surikat\Model\RedBeanPHP\RedException\SQL as SQLException;
 
 /**
  * RedBean Abstract Query Writer
  *
- * @file    RedBean/QueryWriter/AQueryWriter.php
+ * @file    RedBeanPHP/QueryWriter/AQueryWriter.php
  * @desc    Query Writer (abstract class)
  * @author  Gabor de Mooij and the RedBeanPHP Community
  * @license BSD/GPLv2
@@ -26,7 +27,7 @@ use Surikat\Model\RedBeanPHP\OODBBean;
  * This source file is subject to the BSD/GPLv2 License that is bundled
  * with this source code in the file license.txt.
  */
-abstract class AQueryWriter { //bracket must be here - otherwise coverage software does not understand.
+abstract class AQueryWriter {
 	/**
 	 * @var DBAdapter
 	 */
@@ -849,6 +850,17 @@ abstract class AQueryWriter { //bracket must be here - otherwise coverage softwa
 
 		return $rows;
 	}
+	
+	/**
+	 * @see QueryWriter::queryRecordWithCursor
+	 */
+	public function queryRecordWithCursor( $type, $addSql = NULL, $bindings = array() )
+	{
+		$sql = $this->glueSQLCondition( $addSql, NULL );
+		$table = $this->esc( $type );
+		$sql   = "SELECT {$table}.* FROM {$table} {$sql}";
+		return $this->adapter->getCursor( $sql, $bindings );
+	}
 
 	/**
 	 * @see QueryWriter::queryRecordRelated
@@ -1202,7 +1214,7 @@ abstract class AQueryWriter { //bracket must be here - otherwise coverage softwa
 		$property = $this->safeColumn( $property, TRUE );
 		try {
 			$map = $this->getKeyMapForType( $type );
-		} catch ( \Exception $e ) {
+		} catch ( SQLException $e ) {
 			return NULL;
 		}
 		foreach( $map as $key ) {

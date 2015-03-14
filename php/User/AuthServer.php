@@ -1,36 +1,47 @@
 <?php namespace Surikat\User;
-use Surikat\HTTP\Domain;
-use Surikat\User\Session;
-use Surikat\HTTP\HTTP;
-use Surikat\User\Auth;
+use Surikat\User\Auth as User_Auth;
 use Surikat\I18n\Lang;
 use Surikat\DependencyInjection\MutatorMagic;
 Lang::initialize();
 class AuthServer{
 	use MutatorMagic;
 	protected $messages = [];
-	function __construct(Auth $auth=null){
-		if(!$auth)
-			$auth = new Auth();
-		$this->Auth = $auth;
+	protected $lastResult;
+	protected $defaultLogoutKey = 'auth-server-logout';
+	function __construct(User_Auth $Auth=null){
+		if($Auth)
+			$this->User_Auth = $Auth;
+		$this->User_Session = $this->User_Auth->User_Session;
 	}
-	function action($action){
+	function getResultMessage($widget=false){
+		if($this->lastResult&&!is_bool($this->lastResult)){
+			return $this->getMessage($this->lastResult,$widget);
+		}
+	}
+	function getResult(){
+		return $this->lastResult;
+	}
+	function action($action=null){
+		if(!func_num_args())
+			$action = isset($_REQUEST['action'])?$_REQUEST['action']:null;
+		if(!$action)
+			return;
 		$r = null;
 		if(method_exists($this,$action)){
 			$r = $this->$action();
-			$ajax = HTTP::isAjax();
+			$ajax = $this->HTTP_Request->isAjax();
 			if(!is_bool($r)){
 				switch($r){
-					case Auth::OK_LOGGED_IN:
+					case User_Auth::OK_LOGGED_IN:
 						if(!$ajax){
 							$this->User_Session->set('Auth','result',$action,$r);
-							HTTP::reloadLocation();
+							$this->HTTP_Request->reloadLocation();
 						}
 					break;
-					case Auth::OK_REGISTER_SUCCESS:
+					case User_Auth::OK_REGISTER_SUCCESS:
 						if(!$ajax){
 							$this->User_Session->set('Auth','result',$action,$r);
-							HTTP::reloadLocation();
+							$this->HTTP_Request->reloadLocation();
 						}
 					break;
 				}
@@ -38,24 +49,24 @@ class AuthServer{
 			if(!$r)
 				$r = $this->User_Session->get('Auth','result',$action);
 		}
-		return $r;
+		return $this->lastResult = $r;
 	}
 	function register(){
 		if(isset($_POST['email'])&&isset($_POST['login'])&&isset($_POST['password'])&&isset($_POST['confirm'])){
 			$email = $_POST['email'];
 			$login = trim($_POST['login'])?$_POST['login']:$email;
 			$this->User_Session->set('Auth','email',$email);
-			return $this->Auth->register($email, $login, $_POST['password'], $_POST['confirm']);
+			return $this->User_Auth->register($email, $login, $_POST['password'], $_POST['confirm']);
 		}
 	}
 	function resendactivate(){
 		if($email=$this->User_Session->get('Auth','email')){
-			return $this->Auth->resendActivation($email);
+			return $this->User_Auth->resendActivation($email);
 		}
 	}
 	function activate(){
 		if(isset($_GET['key'])){
-			return $this->Auth->activate($_GET['key']);
+			return $this->User_Auth->activate($_GET['key']);
 		}
 	}
 	function loginPersona(){
@@ -77,11 +88,11 @@ class AuthServer{
 					break;
 				}
 			}
-			return $this->Auth->loginPersona($email, $lifetime);
+			return $this->User_Auth->loginPersona($email, $lifetime);
 		}
 	}
 	function login(){
-		if(isset($_POST['login'])&&$_POST['login']&&isset($_POST['password'])&&$_POST['password']){
+		if(isset($_POST['login'])&&isset($_POST['password'])){
 			$lifetime = 0;
 			if(isset($_POST['remember'])&&$_POST['remember']&&isset($_POST['lifetime'])){
 				switch($_POST['lifetime']){
@@ -99,7 +110,7 @@ class AuthServer{
 					break;
 				}
 			}
-			return $this->Auth->login($_POST['login'], $_POST['password'], $lifetime);
+			return $this->User_Auth->login($_POST['login'], $_POST['password'], $lifetime);
 		}
 		elseif(isset($_POST['email'])&&$_POST['email']){
 			return $this->loginPersona();
@@ -107,20 +118,83 @@ class AuthServer{
 	}
 	function resetreq(){
 		if(isset($_POST['email'])){
-			return $this->Auth->requestReset($_POST['email']);
+			return $this->User_Auth->requestReset($_POST['email']);
 		}
 	}
 	function resetpass(){
 		if(isset($_GET['key'])&&isset($_POST['password'])&&isset($_POST['confirm'])){
-			return $this->Auth->resetPass($_GET['key'], $_POST['password'], $_POST['confirm']);
+			return $this->User_Auth->resetPass($_GET['key'], $_POST['password'], $_POST['confirm']);
+		}
+	}
+	function lougoutAPI($key=null){
+		if(!$key)
+			$key = $this->defaultLogoutKey;
+		if(isset($_POST[$key])){
+			$this->logout();
+			return true;
+		}
+	}
+	function lougoutBTN($key=null,$ret=false){
+		if(!$key)
+			$key = $this->defaultLogoutKey;
+		if($this->lougoutAPI()){
+			$this->HTTP->reloadLocation();
+		}
+		else{
+			$html = '
+			<link href="'.$this->HTTP_URL->getBaseHref().'css/font/fontawesome.css" rel="stylesheet" type="text/css">
+			<style type="text/css">
+				a.auth-logout{
+					background: none repeat scroll 0 0 #fff;
+					border: 1px solid #000;
+					border-radius: 3px;
+					color: #000;
+					padding: 1px 3px 0;
+					position: absolute;
+					right: 0;
+					top: 0;
+					z-index: 1000;
+				}
+				a,
+				a:focus,
+				a:hover,
+				a:link:hover,
+				a:visited:hover{
+					color:#000;
+					text-decoration:none;
+				}
+				a.auth-logout::before{
+					font-family: FontAwesome;
+					font-style: normal;
+					font-size: 16px;
+					font-weight: normal;
+					line-height: normal;
+					-webkit-font-smoothing: antialiased;
+					speak: none;
+					content: "\f011";
+				}
+			</style>
+			<script type="text/javascript" src="'.$this->HTTP_URL->getBaseHref().'js/post.js"></script>
+			<script type="text/javascript">
+				authServerLogoutCaller = function(){
+					post("'.$this->HTTP_URL->getLocation().'",{"'.$key.'":1});
+					return false;
+				};
+			</script>
+			';
+			$html .= '<a class="auth-logout" onclick="return authServerLogoutCaller();" href="#"></a>';
+			if($ret)
+				return $html;
+			else
+				echo $html;
 		}
 	}
 	function logout(){
-		return $this->Auth->logout();
+		return $this->User_Auth->logout();
 	}
 	
 	function htmlLock($r,$redirect=true){
-		$action = Domain::getLocation();
+		$action = $this->HTTP_URL->getLocation();
 		if(isset($_POST['__login__'])&&isset($_POST['__password__'])){
 			$lifetime = 0;
 			if(isset($_POST['remember'])&&$_POST['remember']&&isset($_POST['lifetime'])){
@@ -139,18 +213,18 @@ class AuthServer{
 					break;
 				}
 			}
-			if($this->Auth->login($_POST['__login__'],$_POST['__password__'],$lifetime)===Auth::OK_LOGGED_IN){
+			if($this->User_Auth->login($_POST['__login__'],$_POST['__password__'],$lifetime)===Auth::OK_LOGGED_IN){
 				header('Location: '.$action,false,302);
 				exit;
 			}
 		}
-		if($this->Auth->isAllowed($r))
+		if($this->User_Auth->allowed($r))
 			return;
-		if($this->Auth->isConnected()){
+		if($this->User_Auth->connected()){
 			if($redirect)
-				header('Location: '.$this->Auth->siteUrl.'403',false,302);
+				header('Location: '.$this->User_Auth->siteUrl.'403',false,302);
 			else
-				HTTP::code(403);
+				$this->HTTP_Request->code(403);
 			exit;
 		}
 		echo '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Authentication</title>
@@ -175,7 +249,7 @@ class AuthServer{
 		</style>
 		</head><body>';
 		if($seconds=$this->User_Session->isBlocked()){
-			echo $this->Auth->getMessage([Auth::ERROR_USER_BLOCKED,$seconds],true);
+			echo $this->User_Auth->getMessage([Auth::ERROR_USER_BLOCKED,$seconds],true);
 		}
 		echo '<form id="form" action="'.$action.'" method="POST">
 			<label for="__login__">Login</label><input type="text" id="__login__" name="__login__" placeholder="Login"><br>

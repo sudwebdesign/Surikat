@@ -5,10 +5,11 @@ use Surikat\Model\RedBeanPHP\QueryWriter as QueryWriter;
 use Surikat\Model\RedBeanPHP\Adapter\DBAdapter as DBAdapter;
 use Surikat\Model\RedBeanPHP\Adapter as Adapter; 
 use Surikat\Model\RedBeanPHP\Database;
+use Surikat\Model\RedBeanPHP\RedException\SQL as SQLException;
 /**
  * RedBean CUBRID Writer
  *
- * @file    RedBean/QueryWriter/CUBRID.php
+ * @file    RedBeanPHP/QueryWriter/CUBRID.php
  * @desc    Represents a CUBRID Database to RedBean
  * @author  Gabor de Mooij and the RedBeanPHP Community
  * @license BSD/GPLv2
@@ -93,7 +94,7 @@ class CUBRID extends AQueryWriter implements QueryWriter
 		$sql  = "ALTER TABLE $table ADD CONSTRAINT FOREIGN KEY($column) REFERENCES $targetTable($targetColumn) ON DELETE $casc ";
 		try {
 			$this->adapter->exec( $sql );
-		} catch( \Exception $e ) {
+		} catch(SQLException $e ) {
 			return FALSE;
 		}
 	}
@@ -277,7 +278,7 @@ class CUBRID extends AQueryWriter implements QueryWriter
 			$column = $this->safeColumn( $column );
 			$this->adapter->exec( "CREATE INDEX $name ON $table ($column) " );
 			return TRUE;
-		} catch (\Exception $e ) {
+		} catch (SQLException $e ) {
 			return FALSE;
 		}
 	}

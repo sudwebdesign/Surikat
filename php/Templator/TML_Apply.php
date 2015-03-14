@@ -5,7 +5,7 @@ class TML_Apply extends TML {
 	var $_extender;
 	var $_extended;
 	function load(){
-		//if(!$this->View)
+		//if(!$this->Template)
 			//return;
 		$this->remapAttr('file');
 		if(!$this->_extended){
@@ -26,7 +26,8 @@ class TML_Apply extends TML {
 		$this->preventLoad = false;
 	}
 	static function manualLoad($file,&$obj,$params=[]){
-		$apply = new self($obj);
+		$apply = new self();
+		$apply->setParent($obj);
 		$apply->parseFile($file,$params,'apply');
 		foreach($apply->childNodes as $extender)
 			if(method_exists($extender,'applyLoad'))

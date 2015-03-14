@@ -10,7 +10,7 @@ use Surikat\Model\RedBeanPHP\OODBBean as OODBBean;
 /**
  * RedBean Finder
  *
- * @file    RedBean/Finder.php
+ * @file    RedBeanPHP/Finder.php
  * @desc    Helper class to harmonize APIs.
  * @author  Gabor de Mooij and the RedBeanPHP Community
  * @license BSD/GPLv2
@@ -153,5 +153,71 @@ class Finder
 		} else {
 			return $foundBeans;
 		}
+	}
+	
+	/**
+	 * Finds a BeanCollection using the repository.
+	 *
+	 * @param  string $type     the type of bean you are looking for
+	 * @param  string $sql      SQL query to find the desired bean, starting right after WHERE clause
+	 * @param  array  $bindings values array of values to be bound to parameters in query
+	 *
+	 * @return BeanCollection
+	 */
+	public function findCollection( $type, $sql, $bindings = array() )
+	{
+		return $this->redbean->findCollection( $type, $sql, $bindings );
+	}
+	
+	/**
+	 * Finds or creates a bean.
+	 * Tries to find a bean with certain properties specified in the second
+	 * parameter ($like). If the bean is found, it will be returned.
+	 * If multiple beans are found, only the first will be returned.
+	 * If no beans match the criteria, a new bean will be dispensed,
+	 * the criteria will be imported as properties and this new bean
+	 * will be stored and returned.
+	 *
+	 * Format of criteria set: property => value
+	 * The criteria set also supports OR-conditions: property => array( value1, orValue2 )
+	 *
+	 * @param string $type type of bean to search for
+	 * @param array  $like criteria set describing bean to search for
+	 *
+	 * @return OODBBean
+	 */
+	public function findOrCreate( $type, $like = array() )
+	{
+			$beans = $this->findLike( $type, $like );
+			if ( count( $beans ) ) {
+				$bean = reset( $beans );
+				return $bean;
+			}
+
+			$bean = $this->redbean->dispense( $type );
+			$bean->import( $like );
+			$this->redbean->store( $bean );
+			return $bean;
+	}
+
+	/**
+	 * Finds beans by its type and a certain criteria set.
+	 *
+	 * Format of criteria set: property => value
+	 * The criteria set also supports OR-conditions: property => array( value1, orValue2 )
+	 *
+	 * @param string $type type of bean to search for
+	 * @param array  $like criteria set describing the bean to search for
+	 *
+	 * @return array
+	 */
+	public function findLike( $type, $conditions = array(), $sql = '' )
+	{
+		if ( count( $conditions ) > 0 ) {
+			foreach( $conditions as $key => $condition ) {
+				if ( !count( $condition ) ) unset( $conditions[$key] );
+			}
+		}
+		return $this->redbean->find( $type, $conditions, $sql );
 	}
 }

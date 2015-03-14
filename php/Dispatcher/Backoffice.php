@@ -1,23 +1,23 @@
 <?php namespace Surikat\Dispatcher;
-use Surikat\User\Auth;
-use Surikat\User\Session;
-use Surikat\DependencyInjection\Container;
 class Backoffice extends ViewController{
 	protected $pathFS = 'backoffice';
 	function __construct(){
 		$this->setHooks();
 	}
+	function __invoke(){
+		return $this->run(func_get_arg(0));
+	}
 	function setHooks(){
-		Container::get('User\Session')->setName('surikat_backoffice');
+		$this->User_Session->setName('surikat_backoffice');
 		$this
-			->append(['new','Surikat\Route\Extension','css|js|png|jpg|jpeg|gif'],
-						['new','Surikat\Dispatcher\Synaptic',$this->pathFS])
-			->append(['new','Surikat\Route\ByTml','',$this->pathFS],function(){
-				Auth::lockServer(Auth::RIGHT_MANAGE);
-				return call_user_func_array($this,func_get_args());
+			->append(['Route_Extension','css|js|png|jpg|jpeg|gif'],
+						['Dispatcher_Synaptic',$this->pathFS])
+			->append(['Route_ByTml','',$this->pathFS],function(){
+				$this->User_Auth->lockServer($this->User_Auth->constant('RIGHT_MANAGE'));
+				return call_user_func_array($this->getController(),func_get_args());
 			})
-			->append(['new','Surikat\Route\ByPhp','',$this->pathFS],function($paths){
-				Auth::lockServer(Auth::RIGHT_MANAGE);
+			->append(['Route_ByPhpX','',$this->pathFS],function($paths){
+				$this->User_Auth->lockServer($this->User_Auth->constant('RIGHT_MANAGE'));
 				list($dir,$file,$adir,$afile) = $paths;
 				chdir($adir);
 				include $file;

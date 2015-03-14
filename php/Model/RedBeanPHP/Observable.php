@@ -8,7 +8,7 @@ use Surikat\Model\RedBeanPHP\Observer as Observer;
  * Observable
  * Base class for Observables
  *
- * @file            RedBean/Observable.php
+ * @file            RedBeanPHP/Observable.php
  * @description     Part of the observer pattern in RedBean
  * @author          Gabor de Mooij and the RedBeanPHP community
  * @license         BSD/GPLv2
@@ -17,7 +17,7 @@ use Surikat\Model\RedBeanPHP\Observer as Observer;
  * This source file is subject to the BSD/GPLv2 License that is bundled
  * with this source code in the file license.txt.
  */
-abstract class Observable { //bracket must be here - otherwise coverage software does not understand.
+abstract class Observable {
 
 	/**
 	 * @var array

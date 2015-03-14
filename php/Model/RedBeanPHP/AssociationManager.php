@@ -9,13 +9,13 @@ use Surikat\Model\RedBeanPHP\QueryWriter as QueryWriter;
 use Surikat\Model\RedBeanPHP\OODBBean as OODBBean;
 use Surikat\Model\RedBeanPHP\RedException as RedException;
 use Surikat\Model\RedBeanPHP\RedException\Security as Security;
-use Surikat\Model\RedBeanPHP\RedException\SQL as SQL;
+use Surikat\Model\RedBeanPHP\RedException\SQL as SQLException;
 use Surikat\Model\RedBeanPHP\ToolBox as ToolBox;
 
 /**
  * Association Manager
  *
- * @file    RedBean/AssociationManager.php
+ * @file    RedBeanPHP/AssociationManager.php
  * @desc    Manages simple bean associations.
  * @author  Gabor de Mooij and the RedBeanPHP Community
  * @license BSD/GPLv2
@@ -84,7 +84,7 @@ class AssociationManager extends Observable
 		$sourceType = $bean->getMeta( 'type' );
 		try {
 			return $this->writer->queryRecordRelated( $sourceType, $type, $ids, $sql, $bindings );
-		} catch ( SQL $exception ) {
+		} catch ( SQLException $exception ) {
 			$this->handleException( $exception );
 			return [];
 		}
@@ -119,7 +119,7 @@ class AssociationManager extends Observable
 
 		$bean->setMeta( "cast.$property1", "id" );
 		$bean->setMeta( "cast.$property2", "id" );
-		$bean->setMeta( 'sys.is_link', array( $property1, $property2 ) );
+		$bean->setMeta( 'sys.buildcommand.unique', array( $property1, $property2 ) );
 
 		$bean->$property1 = $bean1->id;
 		$bean->$property2 = $bean2->id;
@@ -128,7 +128,7 @@ class AssociationManager extends Observable
 		try {
 			$id = $this->oodb->store( $bean );
 			$results[] = $id;
-		} catch ( SQL $exception ) {
+		} catch ( SQLException $exception ) {
 			if ( !$this->writer->sqlStateIn( $exception->getSQLState(),
 				array( QueryWriter::C_SQLSTATE_INTEGRITY_CONSTRAINT_VIOLATION ) )
 			) {
@@ -232,7 +232,7 @@ class AssociationManager extends Observable
 
 		try {
 			return $this->writer->queryRecordCountRelated( $beanType, $type, $bean->id, $sql, $bindings );
-		} catch ( SQL $exception ) {
+		} catch ( SQLException $exception ) {
 			$this->handleException( $exception );
 
 			return 0;
@@ -283,7 +283,7 @@ class AssociationManager extends Observable
 						$bean = reset( $beans );
 						$this->oodb->trash( $bean );
 					}
-				} catch ( SQL $exception ) {
+				} catch ( SQLException $exception ) {
 					$this->handleException( $exception );
 				}
 			}
@@ -307,7 +307,7 @@ class AssociationManager extends Observable
 		$this->oodb->store( $bean );
 		try {
 			$this->writer->deleteRelations( $bean->getMeta( 'type' ), $type, $bean->id );
-		} catch ( SQL $exception ) {
+		} catch ( SQLException $exception ) {
 			$this->handleException( $exception );
 		}
 	}

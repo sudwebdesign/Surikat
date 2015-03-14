@@ -1,24 +1,22 @@
 <?php namespace Surikat\Service;
-use Surikat\User\Session;
-use Surikat\User\Auth;
-use Surikat\DependencyInjection\Container;
+use Surikat\DependencyInjection\MutatorProperty;
 class ServiceAuth {
-	static function infos(){
+	use MutatorProperty;
+	function infos(){
 		header('Content-Type: application/json; charset=UTF-8');
 		header('Cache-Control: no-cache, must-revalidate');
 		header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
 		header('Pragma: no-cache');
-		echo json_encode(Container::get('User\Session')->get('_AUTH_'));
+		echo json_encode($this->User_Session->get('_AUTH_'));
 	}
-	static function email(){
+	function email(){
 		header('Content-Type: application/json; charset=UTF-8');
 		header('Cache-Control: no-cache, must-revalidate');
 		header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
 		header('Pragma: no-cache');
-		echo json_encode(Container::get('User\Session')->get('_AUTH_','email'));
+		echo json_encode($this->User_Session->get('_AUTH_','email'));
 	}
-	static function persona(){
-		$response = '';
+	function persona(){
 		if(isset($_POST['assertion'])){
 			$assertion = $_POST['assertion'];
 			$audience = (isset($_SERVER['HTTPS'])&&$_SERVER['HTTPS']==='on'?'https://':'http://').$_SERVER['SERVER_NAME'].':'.$_SERVER['SERVER_PORT'];
@@ -33,7 +31,10 @@ class ServiceAuth {
 			$response = curl_exec($ch);
 			curl_close($ch);
 			if(($js = json_decode($response))&&$js->status==='okay'&&$js->email)
-				Container::get('User\Session')->set('email',$js->email);
+				$this->User_Session->set('email',$js->email);
+		}
+		else{
+			$response = json_encode($this->User_Session->get('email'));
 		}
 		header('Content-Type: application/json; charset=UTF-8');
 		header('Cache-Control: no-cache, must-revalidate');
@@ -41,11 +42,11 @@ class ServiceAuth {
 		header('Pragma: no-cache');
 		echo $response;
 	}
-	static function logout(){
+	function logout(){
 		header('Cache-Control: no-cache, must-revalidate');
 		header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
 		header('Pragma: no-cache');
-		Container::get('User\Session')->destroy();
+		$this->User_Session->destroy();
 		echo 'ok';
 	}
 }

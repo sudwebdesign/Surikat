@@ -17,7 +17,7 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 	var $namespace;
 	var $namespaceClass;
 	var $_namespaces;
-	var $View;
+	var $Template;
 	
 	protected $hiddenWrap;
 	protected $preventLoad;
@@ -33,6 +33,38 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 	
 	private $selectorService;
 	
+	function __construct($a=null){
+		if(isset($a)){
+			if(is_string($a))
+				$this->parse($a);
+			elseif(is_array($a))
+				$this->interpret($a);
+		}
+	}
+	function setParent($tml){
+		$this->parent = $tml;
+		if($this->parent){
+			if(($prev=end($this->parent->childNodes))){
+				$prev->nextSibling = &$this;
+				$this->previousSibling = &$prev;
+			}
+			if(!$this->Template&&$this->parent->Template){
+				$this->Template = $this->parent->Template;
+			}
+		}
+	}
+	function setBuilder($tml){
+		$this->constructor = $tml;
+		if($this->constructor&&!$this->Template&&$this->constructor->Template){
+			$this->Template = $this->constructor->Template;
+		}
+	}
+	function setTemplate($template){
+		$this->Template = $template;
+	}
+	function setNodeName($nodeName){
+		$this->nodeName = $nodeName;
+	}
 	function recursiveMethod($callback,$node=null,$args=null){
 		if(func_num_args()<2)
 			$node = &$this;
@@ -62,57 +94,25 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 		}
 		call_user_func_array($callback,[&$node,&$break]);
 	}
-	function View(){
-		return $this->View;
+	function Template(){
+		return $this->Template;
 	}
 	function getFile($file,$c=null){
-		if(!is_file($real=$this->View->find($file)))
-			$this->throwException('&lt'.$c.' "'.$file.'"> template not found ');
+		if(!is_file($real=$this->Template->find($file)))
+			$this->throwException('&lt;'.$c.' "'.$file.'"&gt; template not found ');
 		return file_get_contents($real);
 	}
 	function parseFile($file,$params=null,$c=null){
-		if($this->View)
+		if($this->Template)
 			return $this->parse($this->getFile($file,$c),$params);
-	}
-	function __construct(){
-		$args = func_get_args();
-		if(!empty($args)){
-			if(is_string($args[0])){
-				$parse = array_shift($args);
-				$o = array_shift($args);
-				if($o instanceof CORE)
-					$this->parent = $o;
-				elseif(is_array($o)){
-					$this->View = array_shift($o);
-					$this->constructor = array_shift($o);
-				}
-				else{
-					$this->View = $o;
-					$this->constructor = array_shift($args);
-				}
-				if($this->parent)
-					$this->View = $this->parent->View;
-				$this->parse($parse);
-			}
-			else{
-				$this->parent = array_shift($args);
-				if($this->parent)
-					$this->View = $this->parent->View;
-				$this->interpret($args);
-			}
-		}
-		if($this->parent&&($prev=end($this->parent->childNodes))){
-			$prev->nextSibling = &$this;
-			$this->previousSibling = &$prev;
-		}
 	}
 	protected function cacheForge($extra=null,$php=true,$ev=false){
 		$code = "$this";
 		$h = sha1($code);
 		if($php)
-			$this->View->cachePHP($h,'<?php ob_start();?>'.$code.'<?php $this->cacheRegen(__FILE__,ob_get_clean());',true);
+			$this->Template->cachePHP($h,'<?php ob_start();?>'.$code.'<?php $this->cacheRegen(__FILE__,ob_get_clean());',true);
 		if($ev)
-			$this->View->cacheV($h,$this->evaluate());
+			$this->Template->cacheV($h,$this->evaluate());
 		$this->clear();
 		$this->head('<?php if($__including=$this->cacheInc(\''.$h.'\''.($extra!==null?(','.(is_string($extra)?"'".str_replace("'","\'",$extra)."'":'unserialize('.serialize($extra).')')):'').'))include $__including;?>');
 	}
@@ -188,14 +188,22 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 		}
 		foreach(array_keys($this->metaAttribution) as $k){
 			if(self::checkPIOC($this->metaAttribution[$k])){
-				$this->metaAttribution[$k] = new PHP($this,'PHP',$this->metaAttribution[$k],$this->constructor);
+				$phpNode = new PHP();
+				$phpNode->setParent($this);
+				$phpNode->setBuilder($this->constructor);
+				$phpNode->parse($this->metaAttribution[$k]);
+				$this->metaAttribution[$k] = $phpNode;
 				if(!is_integer($k))
 					$this->attributes[$k] = &$this->metaAttribution[$k];
 			}
 			elseif(self::checkPIOC($k)){
 				$v = $this->metaAttribution[$k];
 				unset($this->metaAttribution[$k]);
-				$this->metaAttribution[] = new PHP($this,'PHP',$k.'="'.$v.'"',$this->constructor);
+				$phpNode = new PHP();
+				$phpNode->setParent($this);
+				$phpNode->setBuilder($this->constructor);
+				$phpNode->parse($k.'="'.$v.'"');
+				$this->metaAttribution[] = $phpNode;
 			}
 			elseif(!is_integer($k))
 				$this->attributes[$k] = &$this->metaAttribution[$k];		
@@ -377,7 +385,7 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 	}
 	function submerge($node){
 		if(is_scalar($node))
-			$node = new TML($node,$this);
+			$node = $this->createChild($node);
 		foreach($node->childNodes as $n)
 			$this->merge($n);
 	}
@@ -414,7 +422,7 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 	}
 	function append($v,$k=null){
 		if(is_scalar($v))
-			$v = new TML($v,$this);
+			$v = $this->createChild($v);
 		if($k===null)
 			$this->childNodes[] = $v;
 		else
@@ -423,7 +431,7 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 	}
 	function prepend($v){
 		if(is_scalar($v))
-			$v = new TML($v,$this);
+			$v = $this->createChild($v);
 		array_unshift($this->childNodes,$v);
 		return $v;
 	}
@@ -435,7 +443,7 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 				$nodes = [$nodes];
 			foreach($nodes as $node){
 				if(is_scalar($node))
-					$node = new TML($node,$this);
+					$node = $this->createChild($node);
 				$found = false;
 				foreach($this->childNodes as $n)
 					if($n->isSameNode($node)){
@@ -458,7 +466,7 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 	}
 	function replaceWith($obj){
 		if(is_scalar($obj))
-			$obj = new TML($obj,$this->parent);
+			$obj = $this->parent->createChild($obj);
 		if(!$this->parent){
 			$this->clean();
 			$this[] = $obj;
@@ -490,13 +498,13 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 	}
 	function before($arg){
 		if(is_scalar($arg))
-			$arg = new TML($arg,$this->parent);
+			$arg = $this->parent->createChild($arg);
 		array_splice($this->parent->childNodes, $this->getIndex()-1, 0, [$arg]);
 		return $arg;
 	}
 	function after($arg){
 		if(is_scalar($arg))
-			$arg = new TML($arg,$this->parent);
+			$arg = $this->parent->createChild($arg);
 		array_splice($this->parent->childNodes, $this->getIndex()+1, 0, [$arg]);
 		return $arg;
 	}
@@ -538,7 +546,7 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 					$str .= $this->indentationTab();
 				}
 				if(is_integer($k)){
-					if($this->View&&$this->View->isXhtml&&isset($this->attributes[$v])&&$v==$this->attributes[$v])
+					if($this->Template&&$this->Template->isXhtml&&isset($this->attributes[$v])&&$v==$this->attributes[$v])
 						$str .= ' '.$v.'="'.$v.'"';
 					else
 						$str .= ' '.$v;
@@ -548,7 +556,7 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 				}
 				$lp = is_integer($k)&&($v instanceof PHP);
 			}
-			if($this->selfClosed&&$this->View&&$this->View->isXhtml)
+			if($this->selfClosed&&$this->Template&&$this->Template->isXhtml)
 				$str .= '></'.$this->nodeName;
 			elseif($this->selfClosed>1)
 				$str .= ' /';
@@ -749,7 +757,7 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 	}
 	function wrap($arg){
 		if(is_scalar($arg)){
-			$arg = new TML($arg,$this->parent);
+			$arg = $this->parent->createChild($arg);
 			if(isset($arg->childNodes[0]))
 				$arg = $arg->childNodes[0];
 			$arg->selfClosed = null;
@@ -773,7 +781,7 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 		$dom = $this->closest()->find('body',0);
 		if(!$dom)
 			return;
-		$src = trim($js->src?$js->src:($js->href?$js->href:key($js->attributes)));
+		$src = trim($js->src);
 		if($src){
 			$script = $dom->find('script:not([src]):last',0);
 			if(!$script){
@@ -808,9 +816,20 @@ class CORE extends PARSER implements \ArrayAccess,\IteratorAggregate{
 
 	function presentProperty(){
 		if(strpos(func_get_arg(0),'<?')!==false){
-			extract((array)$this->View->present);
+			extract((array)$this->Template->present);
 			return $this->evalue(func_get_arg(0));
 		}
 		return func_get_arg(0);
+	}
+	function createChild($parse=null,$builder=null){
+		$tml = new TML();
+		$tml->setParent($this);
+		if(isset($builder))
+			$tml->setBuilder($builder);
+		else
+			$tml->setBuilder($this->constructor);
+		if(isset($parse))
+			$tml->parse($parse);
+		return $tml;
 	}
 }

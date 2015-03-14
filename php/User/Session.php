@@ -1,6 +1,5 @@
 <?php namespace Surikat\User;
 use Surikat\FileSystem\FS;
-use Surikat\HTTP\Domain;
 use Surikat\Exception\Exception;
 use Surikat\Exception\Security as ExceptionSecurity;
 use Surikat\DependencyInjection\MutatorCall;
@@ -12,10 +11,13 @@ class Session{
 	private $name = 'surikat';
 	private $maxAttempts = 10;
 	private $cookieLifetime = 0;
+	private $cookiePath;
+	private $cookieDomain;
 	protected $attemptsPath;
 	protected $idLength = 100;
 	protected $data = [];
 	protected $modified;
+	protected $saveRoot;
 	protected $savePath;
 	protected $splitter = '.';
 	protected $gc_probability = 1;
@@ -24,27 +26,47 @@ class Session{
 	protected $maxLifetime = 31536000; //1 year
 	protected $regeneratePeriod = 3600; //1 hour
 	protected $User_SessionHandler;
-	function __construct($name=null,$savePath=null,SessionHandler $sessionHandler=null){
-		if(!$savePath)
-			$savePath = SURIKAT_PATH.'.tmp/sessions/';
+	protected $handled;
+	function __construct($name=null,$saveRoot=null,SessionHandler $sessionHandler=null){
+		if(!$saveRoot)
+			$saveRoot = SURIKAT_PATH.'.tmp/sessions/';
 		if($name)
-			$this->setName($name);
-		$this->savePath = rtrim($savePath,'/').'/'.$this->name.'/';
+			$this->name = $name;
+		$this->saveRoot = rtrim($saveRoot,'/').'/';
+		$this->savePath = $this->saveRoot.$this->name.'/';
 		$this->attemptsPath = SURIKAT_PATH.'.tmp/attempts/';
+		$this->cookiePath = '/'.$this->HTTP_URL()->getSuffixHref();
+		$this->cookieDomain = $this->HTTP_URL()->getServerHref();
+		$this->checkBlocked();
 		if(isset($sessionHandler))
 			$this->User_SessionHandler = $sessionHandler;
 		else
 			$this->User_SessionHandler = $this->getDependency('User_SessionHandler');
+		$this->garbageCollector();
+	}
+	function handleReload(){
+		if($this->handled)
+			$this->handle();
+	}
+	function handleOnce(){
+		if(!$this->handled){
+			$this->handled = true;
+			$this->handle();
+		}
+	}
+	function handle(){
 		$this->User_SessionHandler->open($this->savePath,$this->name);
-		$this->checkBlocked();
 		if($this->clientExist()){
 			$this->id = $this->clientId();
+			$this->key = $this->clientKey();
 			if($this->serverExist()){
 				$this->data = (array)unserialize($this->User_SessionHandler->read($this->getPrefix().$this->id));
 				$this->autoRegenerateId();
 			}
 			else{
 				$this->id = null;
+				$this->key = null;
+				self::removeCookie($this->name,$this->cookiePath,$this->cookieDomain,false,true);
 				$this->addAttempt();
 				$this->checkBlocked();
 			}
@@ -52,16 +74,17 @@ class Session{
 		if(!isset($this->data['_FP_'])){
 			$this->data['_FP_'] = $this->getClientFP();
 		}
+	}
+	function garbageCollector(){
 		if(mt_rand($this->gc_probability, $this->gc_divisor)===1)
 			$this->User_SessionHandler->gc($this->maxLifetime);
 	}
-	function getPrefix(){
-		return $this->key?$this->key.$this->splitter:'';
-	}
 	function destroy(){
-		$this->User_SessionHandler->destroy($this->getPrefix().$id);
+		if($this->id)
+			$this->User_SessionHandler->destroy($this->getPrefix().$this->id);
 		$this->User_SessionHandler->close();
-		self::removeCookie($this->name);
+		self::removeCookie($this->name,$this->cookiePath,$this->cookieDomain,false,true);
+		return true;
 	}
 	function destroyKey($key){
 		foreach(glob($this->savePath.$key.'.*') as $file)
@@ -69,7 +92,20 @@ class Session{
 	}
 	function setKey($key=null){
 		$this->destroyKey($key);
-		$this->key = $key;
+		if($this->serverExist()){
+			$old = $this->serverFile();
+			$this->key = $key;
+			$new = $this->serverFile();
+			rename($old,$new);
+		}
+		else{
+			$this->key = $key;
+		}
+		if(!$this->id)
+			$this->id = $this->generateId();
+		if($this->clientPrefix().$this->clientId()!=$this->getPrefix().$this->id){
+			$this->writeCookie();
+		}
 	}
 	function regenerateId(){
 		$old = $this->serverFile();
@@ -96,27 +132,50 @@ class Session{
 			$this->regenerateId();
 		}
 	}
+	function getName(){
+		return $this->name;
+	}
 	function setName($name){
 		$this->name = $name;
+		$this->savePath = $this->saveRoot.$this->name.'/';
+		$this->handleReload();
 	}
 	function serverFile(){
-		$id = func_num_args()?func_get_arg(0):$this->id;
+		$id = func_num_args()?func_get_arg(0):$this->getPrefix().$this->id;
 		return $id?$this->savePath.$id:false;
 	}
 	function serverExist(){
-		$id = func_num_args()?func_get_arg(0):$this->id;
+		$id = func_num_args()?func_get_arg(0):$this->getPrefix().$this->id;
 		return is_file($this->serverFile($id));
 	}
+	function cookie(){
+		return self::getCookie($this->name);
+	}
 	function clientId(){
-		return $this->clientExist()?$_COOKIE[$this->name]:null;
+		$cookie = $this->cookie();
+		$pos = strpos($cookie,$this->splitter);
+		if($cookie)
+			return $pos===false?$cookie:substr($cookie,$pos+strlen($this->splitter));
+	}
+	function clientKey(){
+		$cookie = $this->cookie();
+		return $cookie?substr($cookie,0,strpos($cookie,$this->splitter)):null;
+	}
+	function clientPrefix(){
+		$key = $this->clientKey();
+		return $key?$key.$this->splitter:'';
+	}
+	function getPrefix(){
+		return $this->key?$this->key.$this->splitter:'';
 	}
 	function clientExist(){
-		return isset($_COOKIE[$this->name]);
+		return $this->cookie()!==null;
 	}
 	function setCookieLifetime($time){
 		$this->cookieLifetime = $time;
 	}
 	function set(){
+		$this->handleOnce();
 		$this->start();
 		$this->modified = true;
 		$args = func_get_args();
@@ -135,6 +194,7 @@ class Session{
 		return $ref;
 	}
 	function get(){
+		$this->handleOnce();
 		$args = func_get_args();
 		$ref =& $this->data;
 		foreach($args as $k){
@@ -150,7 +210,7 @@ class Session{
 	}
 	function checkBlocked(){
 		if($s=$this->isBlocked()){
-			self::removeCookie($this->name);
+			self::removeCookie($this->name,$this->cookiePath,$this->cookieDomain,false,true);
 			$this->reset();
 			throw new ExceptionSecurity(sprintf('Too many failed session open or login submit. Are you trying to bruteforce me ? Wait for %d seconds',$s));
 		}
@@ -159,15 +219,18 @@ class Session{
 		$this->data = [];
 	}
 	function start(){
-		if(!$this->id){			
+		if(!$this->id){		
 			$this->id = $this->generateId();
+		}
+		if($this->clientPrefix().$this->clientId()!=$this->getPrefix().$this->id){
 			$this->writeCookie();
 		}
-		return $this->id;
 	}
 	function __destruct(){
 		if($this->modified)
 			$this->User_SessionHandler->write($this->getPrefix().$this->id,serialize($this->data));
+		else
+			$this->User_SessionHandler->touch($this->getPrefix().$this->id);
 		$this->User_SessionHandler->close();
 	}
 	function generateId(){
@@ -212,10 +275,11 @@ class Session{
 			$this->name,
 			$this->getPrefix().$this->id,
 			($this->cookieLifetime?time()+$this->cookieLifetime:0),
-			'/'.Domain::getSuffixHref(),
-			Domain::getServerHref(),
+			$this->cookiePath,
+			$this->cookieDomain,
 			false,
-			true
+			true,
+			false
 		);
 	}
 	
@@ -229,12 +293,15 @@ class Session{
 	static function getCookie($name){
         return isset($_COOKIE[$name])?$_COOKIE[$name]:null;
 	}
-	static function setCookie($name, $value='', $expire = 0, $path = '', $domain='', $secure=false, $httponly=false){
-        $_COOKIE[$name] = $value;
+	static function setCookie($name, $value='', $expire = 0, $path = '', $domain='', $secure=false, $httponly=false, $global=true){
+		if($expire&&isset($_COOKIE[$name]))
+			self::removeCookie($name, $path, $domain, $secure, $httponly);
+		if($global)
+			$_COOKIE[$name] = $value;
         return setcookie($name, $value, $expire, $path, $domain, $secure, $httponly);
     }
-    static function removeCookie($name){
+    static function removeCookie($name, $path = '', $domain='', $secure=false, $httponly=false){
         unset($_COOKIE[$name]);
-        return setcookie($name, NULL, -1);
+        return setcookie($name, null, -1, $path, $domain, $secure, $httponly);
     }
 }

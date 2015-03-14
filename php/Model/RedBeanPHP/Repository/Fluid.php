@@ -11,15 +11,15 @@ use Surikat\Model\RedBeanPHP\RedException as RedException;
 use Surikat\Model\RedBeanPHP\RedException\Security as Security;
 use Surikat\Model\RedBeanPHP\SimpleModel as SimpleModel;
 use Surikat\Model\RedBeanPHP\BeanHelper as BeanHelper;
-use Surikat\Model\RedBeanPHP\RedException\SQL as SQL;
+use Surikat\Model\RedBeanPHP\RedException\SQL as SQLException;
 use Surikat\Model\RedBeanPHP\QueryWriter\AQueryWriter as AQueryWriter;
 use Surikat\Model\RedBeanPHP\Repository as Repository;
 
 /**
  * Fluid Repository
  *
- * @file    RedBean/Repository/Fluid.php
- * @desc    RedBean Object Database
+ * @file    RedBeanPHP/Repository/Fluid.php
+ * @desc    RedBeanPHP Object Database
  * @author  Gabor de Mooij and the RedBeanPHP community
  * @license BSD/GPLv2
  *
@@ -129,14 +129,14 @@ class Fluid extends Repository
 					$indexName = "index_foreignkey_{$table}_{$destinationColumnNoQ}";
 					$this->writer->addIndex($table, $indexName, $columnNoQ);
 					$typeof = $bean->getMeta("sys.typeof.{$destinationColumnNoQ}", $destinationColumnNoQ);
-					$isLink = $bean->getMeta( 'sys.is_link', FALSE );
+					$isLink = $bean->getMeta( 'sys.buildcommand.unique', FALSE );
 					//Make FK CASCADING if part of exclusive list (dependson=typeof) or if link bean
-					$isDep = ( $bean->moveMeta( 'sys.dependson' ) === $typeof || is_array( $isLink ) );
+					$isDep = ( $bean->moveMeta( 'sys.buildcommand.fkdependson' ) === $typeof || is_array( $isLink ) );
 					$result = $this->writer->addFK( $table, $typeof, $columnNoQ, 'id', $isDep );
 					//If this is a link bean and all unique columns have been added already, then apply unique constraint
 					if ( is_array( $isLink ) && !count( array_diff( $isLink, array_keys( $this->writer->getColumns( $table ) ) ) ) ) {
-						 $this->writer->addUniqueConstraint( $table, $bean->moveMeta('sys.is_link') );
-						 $bean->setMeta("sys.typeof.{$destinationColumnNoQ}", NULL);
+						$this->writer->addUniqueConstraint( $table, $bean->moveMeta('sys.buildcommand.unique') );
+						$bean->setMeta("sys.typeof.{$destinationColumnNoQ}", NULL);
 					}
 				}
 			}
@@ -289,7 +289,7 @@ class Fluid extends Repository
 	 * @param string  $type type of bean you want to load
 	 * @param integer $id   ID of the bean you want to load
 	 *
-	 * @throws SQL
+	 * @throws SQLException
 	 *
 	 * @return OODBBean
 	 *
@@ -302,7 +302,7 @@ class Fluid extends Repository
 		} else {
 			try {
 				$rows = $this->writer->queryRecord( $type, [ 'id' => [ $id ] ] );
-			} catch ( SQL $exception ) {
+			} catch ( SQLException $exception ) {
 				if ( $this->writer->sqlStateIn( $exception->getSQLState(),
 					[
 						QueryWriter::C_SQLSTATE_NO_SUCH_COLUMN,

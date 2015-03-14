@@ -21,7 +21,7 @@ use Surikat\Model\RedBeanPHP\Repository\Frozen as FrozenRepo;
 /**
  * RedBean Object Oriented DataBase
  *
- * @file    RedBean/OODB.php
+ * @file    RedBeanPHP/OODB.php
  * @desc    RedBean Object Database
  * @author  Gabor de Mooij and the RedBeanPHP community
  * @license BSD/GPLv2
@@ -120,14 +120,15 @@ class OODB extends Observable
 	 * Constructor, requires a query writer.
 	 *
 	 * @param QueryWriter $writer writer
+	 * @param array|boolean $frozen mode of operation: TRUE (frozen), FALSE (default, fluid) or ARRAY (chilled)
 	 */
-	public function __construct( QueryWriter $writer )
+	public function __construct( QueryWriter $writer, $frozen = FALSE )
 	{
 		if ( $writer instanceof QueryWriter ) {
 			$this->writer = $writer;
 		}
 
-		$this->freeze( FALSE );
+		$this->freeze( $frozen );
 	}
 
 	/**
@@ -295,6 +296,23 @@ class OODB extends Observable
 	public function find( $type, $conditions = [], $sql = NULL, $bindings = [] )
 	{
 		return $this->repository->find( $type, $conditions, $sql, $bindings );
+	}
+	
+	
+	/**
+	 * Same as find() but returns a BeanCollection.
+	 *
+	 * @param string $type       type of beans you are looking for
+	 * @param string $addSQL     SQL to be used in query
+	 * @param array  $bindings   whether you prefer to use a WHERE clause or not (TRUE = not)
+	 *
+	 * @return array
+	 *
+	 * @throws SQL
+	 */
+	public function findCollection(  $type, $sql = NULL, $bindings = array() )
+	{
+		return $this->repository->findCollection( $type, $sql, $bindings );
 	}
 
 	/**

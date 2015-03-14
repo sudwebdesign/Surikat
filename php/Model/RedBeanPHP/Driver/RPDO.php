@@ -11,13 +11,14 @@ use Surikat\Model\RedBeanPHP\RedException\SQL as SQL;
 use Surikat\Model\RedBeanPHP\Logger\RDefault as RDefault;
 use Surikat\Model\RedBeanPHP\Logger\RDefault\Debug as Debug;
 use Surikat\Model\RedBeanPHP\PDOCompatible as PDOCompatible;
+use Surikat\Model\RedBeanPHP\Cursor\PDOCursor as PDOCursor;
 
 /**
- *\PDO Driver
+ * PDO Driver
  * This Driver implements the RedBean Driver API
  *
- * @file    RedBean/PDO.php
- * @desc   \PDO Driver
+ * @file    RedBeanPHP/PDO.php
+ * @desc    RPDO Driver
  * @author  Gabor de Mooij and the RedBeanPHP Community, Desfrenes
  * @license BSD/GPLv2
  *
@@ -41,7 +42,7 @@ class RPDO implements Driver
 	/**
 	 * @var boolean
 	 */
-	protected $debug = FALSE;
+	protected $loggingEnabled = FALSE;
 
 	/**
 	 * @var Logger
@@ -77,6 +78,11 @@ class RPDO implements Driver
 	 * @var bool
 	 */
 	protected $flagUseStringOnlyBinding = FALSE;
+	
+	/**
+	* @var integer
+	*/
+	protected $queryCounter = 0;
 
 	/**
 	 * @var string
@@ -138,7 +144,7 @@ class RPDO implements Driver
 		
 		$sql = str_replace('{#prefix}',$this->DB->getPrefix(),$sql);
 		
-		if ( $this->debug && $this->logger ) {
+		if ( $this->loggingEnabled && $this->logger ) {
 			$this->logger->log( $sql, $bindings );
 		}
 		if($this->Dev_Level->SQL)
@@ -180,10 +186,15 @@ class RPDO implements Driver
 
 				$fetchStyle = ( isset( $options['fetchStyle'] ) ) ? $options['fetchStyle'] : NULL;
 				
+				if ( isset( $options['noFetch'] ) && $options['noFetch'] ) {
+					$this->resultArray = array();
+					return $statement;
+				}
+				
 				if($fetchStyle!==false){
 					$this->resultArray = $statement->fetchAll( $fetchStyle );
 
-					if ( $this->debug && $this->logger ) {
+					if ( $this->loggingEnabled && $this->logger ) {
 						$this->logger->log( 'resultset: ' . count( $this->resultArray ) . ' rows' );
 					}
 					
@@ -202,7 +213,7 @@ class RPDO implements Driver
 			//So we need a property to convey the SQL State code.
 			$err = $e->getMessage();
 
-			if ( $this->debug && $this->logger )
+			if ( $this->loggingEnabled && $this->logger )
 				$this->logger->log( 'An error occurred: ' . $err );
 			
 			if($this->Dev_Level->MODEL){
@@ -286,7 +297,7 @@ class RPDO implements Driver
 		}
 		
 		//PHP 5.3 PDO SQLite has a bug with large numbers:
-		if ( strpos( $this->dsn, 'sqlite' ) === 0 && PHP_MAJOR_VERSION === 5 && PHP_MINOR_VERSION === 3) {
+		if ( ( strpos( $this->dsn, 'sqlite' ) === 0 && PHP_MAJOR_VERSION === 5 && PHP_MINOR_VERSION === 3 ) || $this->dsn === 'test-sqlite-53') {
 			$this->max = 2147483647; //otherwise you get -2147483648 ?! demonstrated in build #603 on Travis.
 		} elseif ( strpos( $this->dsn, 'cubrid' ) === 0 ) {
 			$this->max = 2147483647; //bindParam in pdo_cubrid also fails...
@@ -374,15 +385,6 @@ class RPDO implements Driver
 		return $this->resultArray;
 	}
 	
-	function fetch($sql, $bindings = []){
-		static $statement = null;
-		if(!$statement)
-			$statement = $this->exec($sql, $bindings);
-		$fetch = $statement->fetch();
-		if($fetch===false)
-			$statement = false;
-		return $fetch;
-	}
 	function exec($sql, $bindings = []){
 		return $this->runQuery($sql, $bindings, [
 			'fetchStyle' => false,
@@ -420,18 +422,35 @@ class RPDO implements Driver
 	}
 
 	/**
-	 * @see Driver::GetCell
+	 * @see Driver::GetOne
 	 */
-	public function GetCell( $sql, $bindings = [] )
+	public function GetOne( $sql, $bindings = [] )
 	{
 		$arr = $this->GetAll( $sql, $bindings );
-
+		$res = NULL;
+		if ( !is_array( $arr ) ) return NULL;
+		if ( count( $arr ) === 0 ) return NULL;
 		$row1 = array_shift( $arr );
+		if ( !is_array( $row1 ) ) return NULL;
+		if ( count( $row1 ) === 0 ) return NULL;
 		$col1 = array_shift( $row1 );
-
 		return $col1;
 	}
-
+	
+	/**
+	 * Alias for getOne().
+	 * Backward compatibility.
+	 *
+	 * @param string $sql      SQL
+	 * @param array  $bindings bindings
+	 *
+	 * @return mixed
+	 */
+	public function GetCell( $sql, $bindings = array() )
+	{
+		return $this->GetOne( $sql, $bindings );
+	}
+	
 	/**
 	 * @see Driver::GetRow
 	 */
@@ -463,6 +482,16 @@ class RPDO implements Driver
 	}
 
 	/**
+	 * @see Driver::GetCursor
+	 */
+	public function GetCursor( $sql, $bindings = array() )
+	{
+		$statement = $this->runQuery( $sql, $bindings, array( 'noFetch' => TRUE ) );
+		$cursor = new PDOCursor( $statement, \PDO::FETCH_ASSOC );
+		return $cursor;
+	}
+
+	/**
 	 * @see Driver::Affected_Rows
 	 */
 	public function Affected_Rows()
@@ -471,7 +500,17 @@ class RPDO implements Driver
 
 		return (int) $this->affectedRows;
 	}
-
+	
+	function fetch($sql, $bindings = []){
+		static $statement = null;
+		if(!$statement)
+			$statement = $this->exec($sql, $bindings);
+		$fetch = $statement->fetch();
+		if($fetch===false)
+			$statement = false;
+		return $fetch;
+	}
+	
 	/**
 	 * Toggles debug mode. In debug mode the driver will print all
 	 * SQL to the screen together with some information about the
@@ -486,9 +525,9 @@ class RPDO implements Driver
 	{
 		$this->connect();
 
-		$this->debug = (bool) $tf;
+		$this->loggingEnabled = (bool) $tf;
 
-		if ( $this->debug and !$logger ) {
+		if ( $this->loggingEnabled and !$logger ) {
 			$logger = new RDefault();
 		}
 
@@ -604,6 +643,53 @@ class RPDO implements Driver
 	public function isConnected()
 	{
 		return $this->isConnected && $this->pdo;
+	}
+	
+	/**
+	 * Toggles logging, enables or disables logging.
+	 *
+	 * @param boolean $enable TRUE to enable logging
+	 *
+	 * @return self
+	 */
+	public function setEnableLogging( $enable )
+	{
+		$this->loggingEnabled = (boolean) $enable;
+	}
+	
+	/**
+	* Resets the internal Query Counter.
+	*
+	* @return self
+	*/
+	public function resetCounter()
+	{
+		$this->queryCounter = 0;
+		return $this;
+	}
+	
+	/**
+	* Returns the number of SQL queries processed.
+	*
+	* @return integer
+	*/
+	public function getQueryCount()
+	{
+		return $this->queryCounter;
+	}
+	
+	/**
+	 * Returns the maximum value treated as integer parameter
+	 * binding.
+	 *
+	 * This method is mainly for testing purposes but it can help
+	 * you solve some issues relating to integer bindings.
+	 *
+	 * @return integer
+	 */
+	public function getIntegerBindingMax()
+	{
+		return $this->max;
 	}
 	
 	private $debugger;

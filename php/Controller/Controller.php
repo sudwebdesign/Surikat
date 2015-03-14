@@ -1,5 +1,4 @@
 <?php namespace Surikat\Controller;
-use Surikat\HTTP\HTTP;
 use HTTP\Domain;
 use Surikat\Vars\ArrayObject;
 use Surikat\Templator\Template;
@@ -16,14 +15,15 @@ class Controller{
 		$this->Router = $Router;
 		if(method_exists($Router,'getDirHook')
 			&&$hook = $Router->getDirHook()){
-			$this->prefixTmlCompile .= '.'.$hook.'/';
 			$this->getView()->setDirCwd([
-				SURIKAT_PATH.$hook.'/',
-				SURIKAT_SPATH.$hook.'/',
+				$hook.'/',
+				SURIKAT_LINK.$hook.'/',
 			]);
 		}
 		$v = $this->getView();
 		$v->onCompile(function($TML){
+			if($TML->Template->getParent())
+				return;
 			if(!isset($TML->childNodes[0])||$TML->childNodes[0]->namespace!='Presenter')
 				$TML->prepend('<Presenter:Presenter uri="static" />');
 			$this->Templator_Toolbox->JsIs($TML);
@@ -70,7 +70,7 @@ class Controller{
 			$v->display($c.'.tml');
 		}
 		catch(\Surikat\Exception\View $e){
-			HTTP::code($e->getMessage());
+			$this->HTTP_Request->code($e->getMessage());
 		}
 		exit;
 	}

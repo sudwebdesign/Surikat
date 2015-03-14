@@ -9,7 +9,7 @@ use Surikat\Model\RedBeanPHP\Driver as Driver;
 /**
  * DBAdapter (Database Adapter)
  *
- * @file    RedBean/Adapter/DBAdapter.php
+ * @file    RedBeanPHP/Adapter/DBAdapter.php
  * @desc    An adapter class to connect various database systems to RedBean
  * @author  Gabor de Mooij and the RedBeanPHP Community.
  * @license BSD/GPLv2
@@ -77,11 +77,6 @@ class DBAdapter extends Observable implements Adapter
 		$this->signal( 'sql_exec', $this );
 
 		return $this->db->GetAll( $sql, $bindings );
-	}
-	
-	function fetch( $sql, $bindings = [] ){
-		$this->signal( 'sql_exec', $this );
-		return $this->db->fetch($sql, $bindings);
 	}
 
 	/**
@@ -162,15 +157,22 @@ class DBAdapter extends Observable implements Adapter
 
 		if ( !$noSignal ) $this->signal( 'sql_exec', $this );
 
-		$arr = $this->db->getCol( $sql, $bindings );
-
-		if ( $arr && is_array( $arr ) && isset( $arr[0] ) ) {
-			return ( $arr[0] );
-		}
-
-		return NULL;
+		return $this->db->GetOne( $sql, $bindings );
 	}
-
+	
+	function fetch( $sql, $bindings = [] ){
+		$this->signal( 'sql_exec', $this );
+		return $this->db->fetch($sql, $bindings);
+	}
+	
+	/**
+	 * @see Adapter::getCursor
+	 */
+	public function getCursor( $sql, $bindings = array() )
+	{
+		return $this->db->GetCursor( $sql, $bindings );
+	}
+	
 	/**
 	 * @see Adapter::getInsertID
 	 */
